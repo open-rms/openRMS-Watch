@@ -51,15 +51,18 @@ impl AtlasCfg {
 pub struct Contribute {
     #[serde(default)]
     pub enabled: bool,
-    /// The watcher key (ormsw_...) from "My watchers" on the site.
+    /// The watcher's openRMS API key (ormk_..., scope watch:ingest), from "Link to openRMS"
+    /// or pasted. Renewal replaces it here.
     pub token: Option<String>,
+    /// The Atlas watcher the key is linked to (to relink a renewed or pasted key).
+    pub watcher_id: Option<String>,
     #[serde(default = "d_interval")]
     pub interval_s: u64,
 }
 
 impl Default for Contribute {
     fn default() -> Self {
-        Contribute { enabled: false, token: None, interval_s: d_interval() }
+        Contribute { enabled: false, token: None, watcher_id: None, interval_s: d_interval() }
     }
 }
 

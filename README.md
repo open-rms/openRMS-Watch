@@ -86,8 +86,10 @@ watcher picks the sample rate and centre frequency itself and says if the bands 
 **Contributing** is off by default. Set the Atlas URL (production:
 `https://atlas.openrms.dev`), then **Link to openRMS**: the watcher gets a code from
 openRMS-Accounts (`accounts_url`, default `https://auth.openrms.dev`), you approve it on the
-site, pick or name your watcher in the watcher's own Settings page, and openRMS-Atlas hands it a
-watcher key. Or paste a key made under "My watchers" on the site. Events queue locally and
+site, pick or name your watcher in the watcher's own Settings page, and the watcher mints itself
+an openRMS API key (`ormk_`, scope `watch:ingest`, one year) at Accounts and links it to that
+watcher at Atlas. It renews the key itself before it expires. Or paste a `watch:ingest` key made
+on the API keys page at Accounts; the watcher links it on its first upload. Events queue locally and
 upload in batches every 10 minutes (sooner if 4000 are waiting; a server that refuses a batch
 as too large gets smaller ones).
 

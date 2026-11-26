@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 pub const SOFTWARE: &str = concat!("openrms-watch ", env!("CARGO_PKG_VERSION"));
 
@@ -184,6 +184,10 @@ pub struct UploaderCfg {
     pub atlas_url: Option<String>,
     pub enabled: bool,
     pub token: Option<String>,
+    pub watcher_id: Option<String>,
+    pub accounts_url: String,
+    /// watch.toml, where a renewed key and the linked watcher are stored
+    pub config_path: std::path::PathBuf,
     pub interval: Duration,
     pub window_s: i64,
     pub sdr_label: String,
@@ -209,6 +213,9 @@ pub fn run(cfg: UploaderCfg, stop: Arc<AtomicBool>) {
     // shrinks when a server answers 413 (e.g. an Atlas still enforcing 1000 lines)
     let mut max_lines = BATCH_LINES;
     let _ = kv_set(&c, "contribute_enabled", if cfg.enabled { "1" } else { "0" });
+    let mut token = cfg.token.clone().filter(|t| !t.trim().is_empty());
+    let mut watcher_id = cfg.watcher_id.clone();
+    let mut next_key_check = Instant::now();
     while !stop.load(Ordering::Relaxed) {
         std::thread::sleep(Duration::from_millis(500));
         let now = Instant::now();
@@ -225,7 +232,7 @@ pub fn run(cfg: UploaderCfg, stop: Arc<AtomicBool>) {
         if !cfg.enabled {
             continue;
         }
-        let (Some(url), Some(token)) = (&cfg.atlas_url, &cfg.token) else { continue };
+        let (Some(url), Some(mut key)) = (&cfg.atlas_url, token.clone()) else { continue };
         if now >= next_status {
             let cpu = proc_cpu_s();
             let pct = 100.0 * (cpu - last_cpu) / last_cpu_t.elapsed().as_secs_f64().max(1.0);
@@ -251,10 +258,18 @@ pub fn run(cfg: UploaderCfg, stop: Arc<AtomicBool>) {
         if now < next_send {
             continue;
         }
+        // before sending (at most every 10 min): renew the key if it's due
+        if now >= next_key_check {
+            next_key_check = now + cfg.interval.min(Duration::from_secs(600));
+            if let Some(new) = check_key(&c, &agent, &cfg, &key, watcher_id.as_deref()) {
+                token = Some(new.clone());
+                key = new;
+            }
+        }
         if let Err(e) = queue_attempts(&c, cfg.window_s) {
             warn!("uploader: queueing attempts: {e:#}");
         }
-        match send_batch(&c, &agent, url, token, max_lines) {
+        match send_batch(&c, &agent, url, &key, max_lines) {
             Ok(Sent::Done(n, more)) => {
                 if n > 0 {
                     info!("uploaded {n} events");
@@ -268,6 +283,31 @@ pub fn run(cfg: UploaderCfg, stop: Arc<AtomicBool>) {
                 max_lines = (max_lines / 2).max(100);
                 warn!("uploader: batch too large for the server (413); retrying with up to {max_lines} events");
                 next_send = now + Duration::from_secs(2);
+            }
+            Ok(Sent::NotLinked) => {
+                // a pasted key, or a renewed one Atlas couldn't match: (re)link it to our watcher
+                let target = match watcher_id.as_deref() {
+                    Some(id) => crate::keys::Target::Watcher(id),
+                    None => crate::keys::Target::New { name: crate::keys::KEY_NAME, gridsquare: None },
+                };
+                match crate::keys::link(&agent, url, &key, target) {
+                    Ok(l) => {
+                        info!("linked the key to watcher {:?} ({})", l.name, l.watcher_id);
+                        if watcher_id.as_deref() != Some(l.watcher_id.as_str()) {
+                            if let Err(e) = crate::settings::set_key(&cfg.config_path, &key, Some(&l.watcher_id)) {
+                                warn!("uploader: saving the watcher id: {e:#}");
+                            }
+                            watcher_id = Some(l.watcher_id);
+                        }
+                        next_send = now + Duration::from_secs(2);
+                    }
+                    Err(e) => {
+                        let why = format!("this key isn't linked to a watcher and linking failed ({e:#}); link again from Settings");
+                        let _ = kv_set(&c, "upload_error", &why);
+                        warn!("uploader: {why}");
+                        next_send = now + Duration::from_secs(1800);
+                    }
+                }
             }
             Ok(Sent::Rejected(why)) => {
                 warn!("uploader: {why}; retrying in 5 min");
@@ -290,7 +330,49 @@ enum Sent {
     /// the server refused the batch size (413)
     TooLarge,
     Retry(Duration),
+    /// Atlas knows the key but it isn't bound to a watcher (403 not_linked)
+    NotLinked,
     Rejected(String),
+}
+
+/// Before uploads: renew the key when it's due (identity.md §5.4). Returns the new key once saved.
+fn check_key(c: &Connection, agent: &ureq::Agent, cfg: &UploaderCfg, key: &str, watcher_id: Option<&str>) -> Option<String> {
+    use crate::keys;
+    let Some(cl) = keys::claims(key) else {
+        let _ = kv_set(c, "upload_error", "the watcher key isn't an openRMS API key (ormk_); link again from Settings");
+        return None;
+    };
+    let now_s = now_ms() / 1000;
+    if keys::expired(&cl, now_s) {
+        let _ = kv_set(c, "upload_error", "the watcher key has expired; link again from Settings");
+        return None;
+    }
+    if !keys::renew_due(&cl, now_s) {
+        if !cl.renewable && cl.exp - now_s < 14 * 86400 {
+            warn!("uploader: the watcher key expires in {} days and can't renew itself; link again from Settings", (cl.exp - now_s) / 86400);
+        }
+        return None;
+    }
+    if !keys::issued_by(&cl, &cfg.accounts_url) {
+        warn!("uploader: the key is from {}, not {}; not renewing it", cl.iss, cfg.accounts_url);
+        return None;
+    }
+    let new = match keys::renew(agent, &cfg.accounts_url, key) {
+        Ok(k) => k,
+        Err(e) => {
+            warn!("uploader: renewing the watcher key: {e:#} (retrying in an hour)");
+            return None;
+        }
+    };
+    // Save before using it: the old key is already revoked. If saving fails, keep using the new
+    // key in memory and say so loudly (Accounts lets the old key retry for 10 minutes only).
+    if let Err(e) = crate::settings::set_key(&cfg.config_path, &new, watcher_id) {
+        error!("uploader: renewed the watcher key but couldn't save it to {}: {e:#}", cfg.config_path.display());
+        let _ = kv_set(c, "upload_error", "renewed the key but couldn't save it; link again from Settings after a restart");
+    } else {
+        info!("renewed the watcher key (expires in {} days)", keys::claims(&new).map(|n| (n.exp - now_s) / 86400).unwrap_or(0));
+    }
+    Some(new)
 }
 
 fn send_batch(c: &Connection, agent: &ureq::Agent, url: &str, token: &str, max_lines: usize) -> Result<Sent> {
@@ -317,7 +399,7 @@ fn send_batch(c: &Connection, agent: &ureq::Agent, url: &str, token: &str, max_l
     let rows = &rows[..take];
     let resp = agent
         .post(&format!("{}/api/v1/watch/ingest", url.trim_end_matches('/')))
-        .set("x-api-key", token)
+        .set("authorization", &format!("Bearer {token}"))
         .set("content-type", "application/x-ndjson")
         .send_string(&body);
     match resp {
@@ -348,10 +430,18 @@ fn send_batch(c: &Connection, agent: &ureq::Agent, url: &str, token: &str, max_l
             let after = r.header("retry-after").and_then(|s| s.parse().ok()).unwrap_or(60);
             Ok(Sent::Retry(Duration::from_secs(after)))
         }
-        Err(ureq::Error::Status(code @ (401 | 403), _)) => {
-            let why = if code == 401 { "token rejected (revoked, rotated or wrong key)" } else { "watcher disabled by a moderator" };
-            kv_set(c, "upload_error", why)?;
-            Ok(Sent::Rejected(why.into()))
+        Err(ureq::Error::Status(code @ (401 | 403), r)) => {
+            let v: Value = r.into_json().unwrap_or(Value::Null);
+            if code == 403 && v["code"] == "not_linked" {
+                return Ok(Sent::NotLinked);
+            }
+            let why = match (code, v["error"].as_str()) {
+                (401, _) => "token rejected (revoked, expired or wrong key)".to_string(),
+                (_, Some(e)) => e.to_string(),
+                _ => "watcher disabled by a moderator".to_string(),
+            };
+            kv_set(c, "upload_error", &why)?;
+            Ok(Sent::Rejected(why))
         }
         Err(ureq::Error::Status(413, _)) => Ok(Sent::TooLarge),
         Err(e) => Err(e.into()),

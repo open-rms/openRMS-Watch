@@ -26,11 +26,11 @@ pub struct AppState {
     pub atlas_url: Option<String>,
     pub accounts_url: String,
     pub link: Arc<std::sync::Mutex<LinkState>>,
-    /// the short-lived Accounts token while the user picks a watcher (never sent to the page)
-    pub link_token: Arc<std::sync::Mutex<Option<String>>>,
+    /// the sign-in tokens while the user picks a watcher (never sent to the page)
+    pub link_secrets: Arc<std::sync::Mutex<Option<LinkSecrets>>>,
 }
 
-/// One-click linking to openRMS-Atlas (RFC 8628 device flow, feed.md section 1).
+/// One-click linking: device flow at openRMS-Accounts, an Accounts-minted key linked at Atlas.
 #[derive(Serialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct LinkState {
@@ -427,8 +427,46 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Sen
     tokio::task::spawn_blocking(f).await.map_err(|e| e.to_string())?
 }
 
-/// Start "Link to openRMS": a device code from openRMS-Accounts (RFC 8628) for
-/// openRMS-Atlas as audience (identity.md section 3).
+/// The sign-in tokens while the user picks a watcher (never sent to the page, dropped after).
+#[derive(Clone, Default)]
+pub struct LinkSecrets {
+    issuer: String,
+    token_endpoint: String,
+    revocation_endpoint: Option<String>,
+    /// for Accounts (aud = issuer, scope keys): mints the Atlas key
+    access_token: String,
+    refresh_token: Option<String>,
+    /// minted but not yet linked (kept so a retry doesn't mint another)
+    key: Option<String>,
+}
+
+/// One token request (device code or refresh grant). OAuth errors come back as JSON with `error`.
+fn token_request(endpoint: &str, form: &[(&str, &str)]) -> Result<serde_json::Value, String> {
+    match ureq::post(endpoint).send_form(form) {
+        Ok(r) => r.into_json::<serde_json::Value>().map_err(|e| e.to_string()),
+        Err(ureq::Error::Status(_, r)) => r.into_json::<serde_json::Value>().map_err(|e| e.to_string()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// A fresh access token for `resource` from the refresh token (rotated: the new one is kept).
+fn refresh_for(s: &mut LinkSecrets, resource: &str) -> Result<String, String> {
+    let rt = s.refresh_token.clone().ok_or("no refresh token")?;
+    let v = token_request(&s.token_endpoint, &[
+        ("grant_type", "refresh_token"),
+        ("refresh_token", rt.as_str()),
+        ("client_id", "openrms-watch"),
+        ("resource", resource),
+    ])?;
+    if let Some(r) = v["refresh_token"].as_str() {
+        s.refresh_token = Some(r.to_string());
+    }
+    v["access_token"].as_str().map(String::from).ok_or_else(|| format!("openRMS Accounts said: {}", v["error"].as_str().unwrap_or("no token")))
+}
+
+/// Start "Link to openRMS" (identity.md §5.3, feed.md §1): a device code from openRMS-Accounts
+/// for two audiences, Accounts itself (scope `keys`, to mint the watcher's Atlas key) and
+/// Atlas (to list the account's watchers).
 async fn link_start(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     if let Err(r) = check_auth(&st, &headers, true) {
         return r;
@@ -444,21 +482,30 @@ async fn link_start(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Resp
             .map_err(http_err)?
             .into_json()
             .map_err(|e| e.to_string())?;
-        let dev = disc["device_authorization_endpoint"].as_str().ok_or("Accounts has no device login")?.to_string();
-        let tok = disc["token_endpoint"].as_str().ok_or("Accounts has no token endpoint")?.to_string();
+        let s = |k: &str| disc[k].as_str().map(|v| v.trim_end_matches('/').to_string());
+        let dev = s("device_authorization_endpoint").ok_or("Accounts has no device login")?;
+        let secrets = LinkSecrets {
+            issuer: s("issuer").unwrap_or_else(|| acc.clone()),
+            token_endpoint: s("token_endpoint").ok_or("Accounts has no token endpoint")?,
+            revocation_endpoint: s("revocation_endpoint"),
+            ..Default::default()
+        };
         let code: serde_json::Value = ureq::post(&dev)
             .send_form(&[
                 ("client_id", "openrms-watch"),
-                ("scope", "openid callsign clubs"), // no offline_access: the token is used once, so no refresh token
+                // offline_access: a refresh token turns the approval into a second token for
+                // Atlas; both are dropped once the key is linked
+                ("scope", "openid callsign clubs keys offline_access"),
+                ("resource", secrets.issuer.as_str()),
                 ("resource", d2.as_str()),
             ])
             .map_err(http_err)?
             .into_json()
             .map_err(|e| e.to_string())?;
-        Ok((tok, code))
+        Ok((secrets, code))
     })
     .await;
-    let (token_endpoint, code) = match r {
+    let (mut secrets, code) = match r {
         Ok(x) => x,
         Err(e) => return (StatusCode::BAD_GATEWAY, format!("couldn't reach openRMS Accounts at {accounts}: {e}")).into_response(),
     };
@@ -467,6 +514,7 @@ async fn link_start(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Resp
     };
     let interval = code["interval"].as_u64().unwrap_or(5).max(1);
     let expires = code["expires_in"].as_u64().unwrap_or(900);
+    *st.link_secrets.lock().unwrap() = None;
     link_set(&st, |l| {
         *l = LinkState {
             status: "pending",
@@ -479,28 +527,45 @@ async fn link_start(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Resp
     let st2 = st.clone();
     tokio::spawn(async move {
         let r = async {
-            let token = link_poll(&token_endpoint, &device_code, interval, expires).await?;
-            let (d, t) = (dir.clone(), token.clone());
-            let list: serde_json::Value = blocking(move || {
-                ureq::get(&format!("{d}/api/v1/me/watchers"))
+            let v = link_poll(&secrets.token_endpoint, &device_code, &secrets.issuer, interval, expires).await?;
+            secrets.access_token = v["access_token"].as_str().unwrap_or_default().to_string();
+            secrets.refresh_token = v["refresh_token"].as_str().map(String::from);
+            // the account's watchers, with a token for Atlas; without them the page still
+            // offers a new watcher
+            let (d, mut s2) = (dir.clone(), secrets.clone());
+            let listed = blocking(move || {
+                let t = refresh_for(&mut s2, &d)?;
+                let list: serde_json::Value = ureq::get(&format!("{d}/api/v1/me/watchers"))
                     .set("authorization", &format!("Bearer {t}"))
                     .call()
                     .map_err(http_err)?
                     .into_json()
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| e.to_string())?;
+                Ok((list, s2))
             })
-            .await?;
-            Ok::<_, String>((token, list))
+            .await;
+            let list = match listed {
+                Ok((list, s2)) => {
+                    secrets = s2;
+                    list
+                }
+                Err(e) => {
+                    tracing::warn!("linking: couldn't list your watchers at Atlas ({e}); offering a new one");
+                    serde_json::Value::Null
+                }
+            };
+            Ok::<_, String>((secrets, list))
         }
         .await;
         match r {
-            Ok((token, list)) => {
-                *st2.link_token.lock().unwrap() = Some(token);
+            Ok((secrets, list)) => {
+                *st2.link_secrets.lock().unwrap() = Some(secrets);
                 let watchers = list["watchers"].as_array().cloned().unwrap_or_default();
                 link_set(&st2, |l| {
                     l.status = "choose";
                     l.watchers = watchers
                         .iter()
+                        .filter(|w| w["disabled"] != true)
                         .map(|w| serde_json::json!({"id": w["id"], "name": w["name"], "gridsquare": w["gridsquare"], "hasKey": w["hasKey"]}))
                         .collect();
                 });
@@ -514,8 +579,8 @@ async fn link_start(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Resp
     Json(st.link.lock().unwrap().clone()).into_response()
 }
 
-/// Poll the token endpoint until the code is approved.
-async fn link_poll(token_endpoint: &str, device_code: &str, interval: u64, expires: u64) -> Result<String, String> {
+/// Poll the token endpoint until the code is approved; the token is for Accounts (`resource`).
+async fn link_poll(token_endpoint: &str, device_code: &str, resource: &str, interval: u64, expires: u64) -> Result<serde_json::Value, String> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(expires);
     let mut wait = interval;
     loop {
@@ -523,24 +588,19 @@ async fn link_poll(token_endpoint: &str, device_code: &str, interval: u64, expir
         if std::time::Instant::now() > deadline {
             return Err("the code expired before it was approved; start again".into());
         }
-        let (ep, dc) = (token_endpoint.to_string(), device_code.to_string());
+        let (ep, dc, res) = (token_endpoint.to_string(), device_code.to_string(), resource.to_string());
         let v = blocking(move || {
-            let resp = ureq::post(&ep).send_form(&[
+            token_request(&ep, &[
                 ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
                 ("device_code", dc.as_str()),
                 ("client_id", "openrms-watch"),
-            ]);
-            match resp {
-                Ok(r) => r.into_json::<serde_json::Value>().map_err(|e| e.to_string()),
-                // OAuth errors are 400 with a JSON body
-                Err(ureq::Error::Status(_, r)) => r.into_json::<serde_json::Value>().map_err(|e| e.to_string()),
-                Err(e) => Err(e.to_string()),
-            }
+                ("resource", res.as_str()),
+            ])
         })
         .await;
         let Ok(v) = v else { continue }; // network blip: keep polling until the deadline
-        if let Some(t) = v["access_token"].as_str() {
-            return Ok(t.to_string());
+        if v["access_token"].is_string() {
+            return Ok(v);
         }
         match v["error"].as_str() {
             Some("authorization_pending") | None => {}
@@ -560,68 +620,100 @@ struct LinkFinish {
     gridsquare: Option<String>,
 }
 
-/// The user picked (or named) a watcher: get its key from openRMS-Atlas, save it, restart.
+/// The user picked (or named) a watcher: mint the Atlas key at Accounts, link it to that
+/// watcher at Atlas, save both, restart.
 async fn link_finish(State(st): State<Arc<AppState>>, headers: HeaderMap, Json(f): Json<LinkFinish>) -> Response {
     if let Err(r) = check_auth(&st, &headers, true) {
         return r;
     }
-    let Some(token) = st.link_token.lock().unwrap().clone() else {
+    let Some(mut secrets) = st.link_secrets.lock().unwrap().clone() else {
         return (StatusCode::BAD_REQUEST, "start linking first").into_response();
     };
     let Some(dir) = st.atlas_url.clone().map(|u| u.trim_end_matches('/').to_string()) else {
         return (StatusCode::BAD_REQUEST, "no Atlas URL").into_response();
     };
-    let body = match (&f.watcher_id, &f.name) {
-        (Some(id), _) if !id.is_empty() => serde_json::json!({"watcherId": id}),
-        (_, Some(n)) if !n.trim().is_empty() => {
-            let mut b = serde_json::json!({"name": n.trim()});
-            if let Some(g) = f.gridsquare.as_deref().map(str::trim).filter(|g| !g.is_empty()) {
-                b["gridsquare"] = g.into();
-            }
-            b
-        }
-        _ => return (StatusCode::BAD_REQUEST, "pick a watcher or give the new one a name").into_response(),
-    };
+    let watcher_id = f.watcher_id.clone().filter(|id| !id.is_empty());
+    let name = f.name.clone().map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
+    if watcher_id.is_none() && name.is_none() {
+        return (StatusCode::BAD_REQUEST, "pick a watcher or give the new one a name").into_response();
+    }
+    let gridsquare = f.gridsquare.clone();
+    let d = dir.clone();
     let r = blocking(move || {
-        ureq::post(&format!("{dir}/api/v1/watch/link"))
-            .set("authorization", &format!("Bearer {token}"))
-            .send_json(body)
-            .map_err(http_err)?
-            .into_json::<serde_json::Value>()
-            .map_err(|e| e.to_string())
+        let key = match secrets.key.clone() {
+            Some(k) => k,
+            None => {
+                let minted = match crate::keys::mint(&secrets.issuer, &secrets.access_token, &d) {
+                    // the access token lasts 15 minutes: refresh it if the user took longer
+                    Err((401, _)) => {
+                        let iss = secrets.issuer.clone();
+                        secrets.access_token = refresh_for(&mut secrets, &iss)?;
+                        crate::keys::mint(&secrets.issuer, &secrets.access_token, &d)
+                    }
+                    r => r,
+                };
+                let k = minted.map_err(|(code, e)| format!("openRMS Accounts wouldn't make the key (HTTP {code}): {e}"))?;
+                secrets.key = Some(k.clone());
+                k
+            }
+        };
+        let agent = ureq::AgentBuilder::new().timeout(std::time::Duration::from_secs(30)).build();
+        let target = match (&watcher_id, &name) {
+            (Some(id), _) => crate::keys::Target::Watcher(id),
+            (_, Some(n)) => crate::keys::Target::New { name: n, gridsquare: gridsquare.as_deref() },
+            _ => unreachable!(),
+        };
+        let linked = crate::keys::link(&agent, &d, &key, target).map_err(|e| format!("openRMS Atlas refused: {e:#}"));
+        Ok((secrets, key, linked))
     })
     .await;
-    let v = match r {
-        Ok(v) => v,
+    let (secrets, key, linked) = match r {
+        Ok(x) => x,
         Err(e) => {
             link_set(&st, |l| {
                 l.status = "error";
-                l.error = Some(format!("openRMS-Atlas refused: {e}"));
+                l.error = Some(e.clone());
             });
-            return (StatusCode::BAD_GATEWAY, format!("openRMS-Atlas refused: {e}")).into_response();
+            return (StatusCode::BAD_GATEWAY, e).into_response();
         }
     };
-    let Some(key) = v["key"].as_str().map(String::from) else {
-        return (StatusCode::BAD_GATEWAY, "no key in openRMS-Atlas's answer").into_response();
+    let linked = match linked {
+        Ok(l) => l,
+        Err(e) => {
+            // keep the minted key so trying again doesn't make another
+            *st.link_secrets.lock().unwrap() = Some(secrets);
+            return (StatusCode::BAD_GATEWAY, e).into_response();
+        }
     };
-    let name = v["name"].as_str().unwrap_or("watcher").to_string();
-    *st.link_token.lock().unwrap() = None; // single use: discard
+    *st.link_secrets.lock().unwrap() = None;
+    // the sign-in is done with: revoke its refresh token (best effort)
+    if let (Some(ep), Some(rt)) = (secrets.revocation_endpoint.clone(), secrets.refresh_token.clone()) {
+        let _ = blocking(move || {
+            ureq::post(&ep)
+                .send_form(&[("token", rt.as_str()), ("token_type_hint", "refresh_token"), ("client_id", "openrms-watch")])
+                .map(|_| ())
+                .map_err(http_err)
+        })
+        .await;
+    }
     let saved = (|| -> anyhow::Result<()> {
         let text = std::fs::read_to_string(&st.config_path)?;
         let cfg = crate::config::Config::load(&st.config_path)?;
         let mut s = crate::settings::from_config(&cfg);
         s.contribute.enabled = true;
-        s.contribute.token = Some(key);
+        s.contribute.token = Some(key.clone());
         // keep the current tuning: no re-plan
         let plan = cfg.widebands.first().map(|w| crate::plan::Plan {
             rate: w.rate, center_hz: w.center_hz, segments: w.segments.clone(), cores: 0.0,
         });
         let new = crate::settings::apply(&text, &s, plan.as_ref())?;
-        crate::settings::save(&st.config_path, &new)
+        crate::settings::save(&st.config_path, &new)?;
+        crate::settings::set_key(&st.config_path, &key, Some(&linked.watcher_id))
     })();
     if let Err(e) = saved {
         return err(format!("linked, but saving the key failed: {e:#}")).into_response();
     }
+    let name = linked.name;
     link_set(&st, |l| {
         l.status = "done";
         l.watcher = Some(name.clone());

@@ -101,8 +101,8 @@ defaults: a Raspberry Pi 4 probably gets one band at 2.4 MS/s and 4 decoders (to
 
 Local outbox table (event ULID, sent flag), batch upload every 10 minutes (up to 4900 events / 4.5 MB per POST, early when 4000 are
 waiting, halved on HTTP 413), retry with backoff, survives restarts and offline periods. Status on the page: linked account, last upload, queue length,
-token errors. Token: an `ormsw_` key the user creates under "My watchers" on the site and pastes
-into the Contribute page; one-click linking (device code, traded once for a key) comes later.
+token errors. Token: an openRMS API key (`ormk_`, see "Accounts-minted keys" below) from
+one-click linking, or pasted.
 
 Daily refresh of `/api/v1/watch/callsigns` (callsigns with their listed dial frequencies) replaces
 the hand-made calls file. Naming follows the same rules as Atlas (feed.md section 3):
@@ -131,8 +131,7 @@ on gateway pages, contributor list and page (about 1 day); **C** live SSE stream
 The user decided to move sign-in out of Atlas into openRMS-Accounts
 (`https://auth.openrms.dev`, contract `../openRMS-Spec/accounts/identity.md`). For the watcher:
 
-- **Unchanged:** `ormsw_` watcher keys are still minted and checked by Atlas; uploads,
-  `/watch/callsigns`, the outbox and pasted keys work as today.
+- (Superseded 2026-11-26 by "Accounts-minted keys" below: `ormsw_` keys are retired.)
 - **Changes (done 2026-11-25 after the user's go, relayed by openrms-84; tested end to end against Accounts :8789 and Atlas :8787):** "Link to openRMS" runs the
   RFC 8628 device flow against Accounts (client `openrms-watch`, with
   `resource=https://atlas.openrms.dev` so the token's audience is Atlas). The result is a
@@ -145,7 +144,7 @@ The user decided to move sign-in out of Atlas into openRMS-Accounts
   watcher calls `GET /api/v1/me/watchers` (to let the user pick one in the watcher's own page)
   and `POST /api/v1/watch/link` `{watcherId}` or `{name, gridsquare?}` and gets
   `{key, watcherId, name}`. The Accounts approval page knows nothing about watchers.
-- Existing `ormsw_` keys are migrated with the same hashes and watchers: no re-linking.
+- (Superseded: there were no live `ormsw_` keys to migrate.)
 - To do once openRMS-Libs has a hosted remote: replace the inline device flow in `src/web.rs`
   (`link_start` / `link_poll`) with the shared `openrms-auth` crate (tag `openrms-auth-v0.1.0`,
   `wait_for_device` inside `spawn_blocking`, scope without `offline_access`, cancel on a new
@@ -168,3 +167,32 @@ The user decided to move sign-in out of Atlas into openRMS-Accounts
 3. Linux only (all distributions and architectures); Windows and macOS dropped for now.
 4. Mercury patches may be offered upstream once stable; no Windows work.
 5. Unsigned builds for now; web port 17373.
+
+## Accounts-minted keys (2026-11-26)
+
+Accounts mints every API key (identity.md §5); Atlas only verifies. Atlas-minted `ormsw_` keys
+are retired (no live watchers had them). The watcher now:
+
+- **Links:** device code at Accounts with `scope=openid callsign clubs keys offline_access` and two
+  resources, the issuer and Atlas. It polls with `resource=<issuer>` (a token for Accounts),
+  swaps the refresh token for an Atlas token (`resource=<atlas>`) only to list
+  `GET /api/v1/me/watchers`, and after the user picks: `POST {issuer}/api/v1/keys`
+  `{aud: <atlas>, scopes: [watch:ingest], name: "openRMS Watch", expires_in_days: 365}` (on 401,
+  refresh and retry), then `POST {atlas}/api/v1/watch/link` with `Bearer ormk_` and
+  `{watcherId}` or `{name, gridsquare}` → `{watcherId, name}`. It stores `token` and `watcher_id`
+  in `[contribute]` and revokes the refresh token. A minted key whose link failed is kept for
+  the retry, so a retry doesn't mint another.
+- **Uploads** with `Authorization: Bearer ormk_`. On `403 {code: not_linked}` (a pasted key, or
+  a renewal Atlas couldn't match) it relinks to the saved `watcher_id` (no watcher yet: a new
+  one named "openRMS Watch") and saves the id.
+- **Renews** before uploading when less than a third of the key's life is left (at most 30
+  days ahead): `POST {issuer}/api/v1/keys/renew` with the current key, only for `renewable` keys
+  issued by the configured Accounts. The new key (with `replaces`) is saved to watch.toml first;
+  Atlas moves the watcher to it on first use.
+- Tested 2026-11-26 against the dev Accounts (:8789) and Atlas (:8787): device link with both
+  resources, watcher listing, minting, linking, uploads, relinking a pasted key after
+  `not_linked`, and an upload with a renewed key (no relink needed). Throwaway user deleted.
+  The uploader's own renewal (check, renew, save, swap, rebind via `replaces`) ran against a
+  local stand-in for Accounts and Atlas with 60-second keys. Not run yet: the refresh-and-retry
+  when minting after the 15-minute access token has expired.
+

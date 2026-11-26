@@ -23,10 +23,18 @@ open gateway registry. There they become:
 3. Approve the code shown, on the page that opens (or type it in at the address shown, from any
    device).
 4. Back in the watcher, pick one of your watchers or name a new one, and press
-   **Use this watcher**. The watcher saves its key, turns contributing on, and restarts.
+   **Use this watcher**. The watcher makes itself an openRMS API key (it appears as
+   "openRMS Watch" on your API keys page at openRMS Accounts), saves it, turns contributing on,
+   and restarts.
 
-Prefer not to sign in from the watcher? Create a watcher under **My watchers** on the site,
-copy its key (`ormsw_...`) and paste it into **Or paste a watcher key**.
+The key lasts a year and the watcher renews it on its own about a month before it runs out
+(Accounts emails you each time), so there's nothing to redo.
+
+Prefer not to sign in from the watcher? On the **API keys** page at openRMS Accounts
+(`https://auth.openrms.dev/keys`), make a key for openRMS Atlas with the **watch:ingest** scope,
+copy it (`ormk_...`) and paste it into **Or paste an API key**. The watcher links it to your
+watcher on its first upload (or to a new watcher called "openRMS Watch", which you can rename on
+the site). Keys made on that page don't renew themselves: make a new one before it expires.
 
 Uploads go in batches every 10 minutes (sooner if a lot is waiting). If the internet is down,
 events wait in a local queue and go out later; nothing is lost.
@@ -62,11 +70,12 @@ the status line above, or your settings.
 
 - Anyone with an account can contribute. A sighting becomes **confirmed** only when watchers
   belonging to two or more callsign-verified accounts hear the station within 10 minutes.
-- The key only works for uploads, only for that watcher, and you can revoke or replace it on
-  the site at any time. A revoked key shows "token rejected" in the watcher's Status page; the
+- The key only works for uploads (scope `watch:ingest`), only at Atlas, and you can revoke it
+  on the API keys page at openRMS Accounts at any time. A revoked key shows "token rejected" in the watcher's Status page; the
   watcher keeps working locally.
 - Moderators can disable a watcher that sends bad data.
 
 ## Turning it off
 
-Untick **Contribute** in Settings and save. Revoke the key on the site if you won't use it again.
+Untick **Contribute** in Settings and save. Revoke the key on the API keys page at openRMS
+Accounts if you won't use it again.

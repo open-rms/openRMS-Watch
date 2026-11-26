@@ -49,8 +49,10 @@ shows how many callsigns the watcher has. See [Why some stations have no name](s
 
 ## "token rejected"
 
-The watcher's key was revoked or replaced (linking again replaces it). Link again from
-Settings, or paste a new key. "Watcher disabled by a moderator" means just that; ask the site
+The watcher's key was revoked or has expired (keys made on the API keys page don't renew
+themselves). Link again from Settings, or paste a new key. Linked keys renew on their own; if
+the log shows "renewing the watcher key" failing for days, check that the **Accounts URL** is
+right and the watcher can reach it. "Watcher disabled by a moderator" means just that; ask the site
 operators.
 
 ## "Link to openRMS" fails
@@ -58,6 +60,10 @@ operators.
 - "set the Atlas URL first": fill in **Atlas URL**, save, then link.
 - "couldn't reach openRMS Accounts": check the internet connection, and **Accounts URL** if you
   changed it (leave it empty for the default).
+- "openRMS Accounts wouldn't make the key": you have 50 active keys already, or Accounts
+  refused the request; the message says which. Revoke old keys on the API keys page.
+- "this key isn't linked to a watcher and linking failed": usually the watcher it was linked to was deleted on the site. Link
+  again.
 - The code expires after 15 minutes; press Link again for a new one.
 
 ## The page doesn't open
@@ -78,4 +84,4 @@ needs the patched Mercury from `scripts/build-mercury.sh`, not a stock one.
 
 Open an issue at https://github.com/open-rms/openRMS-Watch/issues with the version
 (`openrms-watch --version`), your SDR, your distribution, and the log around the problem.
-Remove any watcher key (`ormsw_...`) before pasting a config.
+Remove any key (`ormk_...`) before pasting a config.

@@ -293,8 +293,8 @@ pub fn apply(text: &str, s: &Settings, plan: Option<&crate::plan::Plan>) -> Resu
             }
             Some(t) => {
                 let t = t.trim();
-                if !t.starts_with("ormsw_") {
-                    bail!("that isn't a watcher key (they start with ormsw_)");
+                if crate::keys::claims(t).is_none() {
+                    bail!("that isn't an openRMS API key (they start with ormk_; make one at openRMS Accounts with the watch:ingest scope)");
                 }
                 c["token"] = value(t);
             }
@@ -302,6 +302,19 @@ pub fn apply(text: &str, s: &Settings, plan: Option<&crate::plan::Plan>) -> Resu
         }
     }
     Ok(doc.to_string())
+}
+
+/// Store the watcher's key and the watcher it's linked to (after linking or renewal), leaving
+/// the rest of the file as it is.
+pub fn set_key(path: &Path, token: &str, watcher_id: Option<&str>) -> Result<()> {
+    let text = std::fs::read_to_string(path)?;
+    let mut doc: DocumentMut = text.parse()?;
+    let c = table(&mut doc, "contribute");
+    c["token"] = value(token);
+    if let Some(id) = watcher_id {
+        c["watcher_id"] = value(id);
+    }
+    save(path, &doc.to_string())
 }
 
 /// Write `text` to `path` after checking it loads; keeps a .bak of the old file.
@@ -325,6 +338,9 @@ pub fn save(path: &Path, text: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ormk_ + header {"alg":"EdDSA"} + payload {"iss":"x","exp":1} + signature
+    const TEST_KEY: &str = "ormk_eyJhbGciOiJFZERTQSJ9.eyJpc3MiOiJ4IiwiZXhwIjoxfQ.c2ln";
 
     const BASE: &str = r#"# my watcher
 [watch]
@@ -377,7 +393,7 @@ segments = [[7000000, 7300000]]
         s.web.port = 18000;
         s.web.password = Some("hunter22".into());
         s.atlas.url = "http://localhost:8787/".into();
-        s.contribute = Contribute { enabled: true, token_set: false, token: Some("ormsw_abc".into()) };
+        s.contribute = Contribute { enabled: true, token_set: false, token: Some(TEST_KEY.into()) };
         let plan = crate::plan::Plan { rate: 16_000_000, center_hz: 12_200_000, segments: vec![], cores: 1.0 };
         let text = apply(BASE, &s, Some(&plan)).unwrap();
         assert!(text.contains("# keep this comment"));
@@ -387,12 +403,17 @@ segments = [[7000000, 7300000]]
         assert_eq!(cfg2.watch.listen, "127.0.0.1:18000");
         assert_eq!(cfg2.widebands[0].segments.len(), 2);
         assert_eq!(cfg2.widebands[0].rate, 16_000_000);
-        assert_eq!(cfg2.contribute.token.as_deref(), Some("ormsw_abc"));
+        assert_eq!(cfg2.contribute.token.as_deref(), Some(TEST_KEY));
         assert!(check_password(cfg2.web.password_hash.as_deref().unwrap(), "hunter22"));
         assert!(!check_password(cfg2.web.password_hash.as_deref().unwrap(), "wrong"));
         let s2 = from_config(&cfg2);
         assert!(s2.contribute.token_set && s2.web.password_set && !s2.advanced_config);
-        assert!(apply(&text, &Settings { contribute: Contribute { token: Some("nope".into()), ..Default::default() }, ..s2 }, Some(&plan)).is_err());
+        assert!(apply(&text, &Settings { contribute: Contribute { token: Some("ormsw_old".into()), ..Default::default() }, ..s2 }, Some(&plan)).is_err());
+        set_key(&p, "ormk_new.e30.c2ln", Some("w-1")).unwrap();
+        let cfg3 = Config::load(&p).unwrap();
+        assert_eq!(cfg3.contribute.token.as_deref(), Some("ormk_new.e30.c2ln"));
+        assert_eq!(cfg3.contribute.watcher_id.as_deref(), Some("w-1"));
+        assert_eq!(cfg3.watch.listen, "127.0.0.1:18000");
         std::fs::remove_dir_all(&dir).ok();
     }
 }

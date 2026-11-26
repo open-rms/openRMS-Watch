@@ -4,6 +4,7 @@ mod crc;
 mod db;
 mod detect;
 mod dsp;
+mod keys;
 mod live;
 mod monitor;
 mod naming;
@@ -206,6 +207,9 @@ fn main() -> Result<()> {
                     atlas_url: cfg.atlas.url.clone(),
                     enabled: contribute,
                     token: cfg.contribute.token.clone(),
+                    watcher_id: cfg.contribute.watcher_id.clone(),
+                    accounts_url: cfg.atlas.accounts(),
+                    config_path: std::path::absolute(&cli.config)?,
                     interval: std::time::Duration::from_secs(cfg.contribute.interval_s.max(10)),
                     window_s: cfg.watch.attempt_window_s,
                     sdr_label: cfg.receivers.iter().map(|r| if r.name.is_empty() { r.id.clone() } else { r.name.clone() }).collect::<Vec<_>>().join(", "),
@@ -354,7 +358,7 @@ fn serve(cfg: &config::Config, config_path: &std::path::Path, stop: Option<Arc<A
         atlas_url: cfg.atlas.url.clone(),
         accounts_url: cfg.atlas.accounts(),
         link: Default::default(),
-        link_token: Default::default(),
+        link_secrets: Default::default(),
     };
     let listen = cfg.watch.listen.clone();
     tokio::runtime::Runtime::new()?.block_on(async move {
