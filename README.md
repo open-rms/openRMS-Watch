@@ -7,6 +7,9 @@ SDRs through SoapySDR (or any IQ/audio command, e.g. KiwiSDR), and optionally th
 openRMS-Atlas (callsign list, uploads; formerly openRMS-Atlas) and openRMS-Accounts (linking). · **Status:** alpha (verified on recorded and synthetic
 audio; not yet heard a real Mercury station on air). · **License:** AGPL-3.0-or-later.
 
+**Website and docs:** https://watch.openrms.dev (source: `docs/` and `site/`). Docs are
+CC-BY-4.0 (`LICENSE-CC-BY-4.0`); code is AGPL-3.0-or-later (`LICENSE`).
+
 ## How it works
 
 ```

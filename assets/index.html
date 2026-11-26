@@ -134,6 +134,7 @@ canvas.spec{width:100%;height:110px;display:block;background:var(--bg);border-ra
       <div class="row"><label>Gain</label><div id="s-gains"></div></div>
       <div class="row"><label>Frequency error (ppm)</label><input type="number" step="0.01" id="s-ppm"> <span class="note">positive if signals read low. Measure with <code>scripts/atsc_cal.py</code>.</span></div>
       <div class="row"><label>Upconverter offset (Hz)</label><input type="number" step="1" id="s-upconv"> <span class="note">e.g. 125000000 for a Ham It Up; 0 if none</span></div>
+      <div class="row"><label>Driver settings</label><input type="text" id="s-drv" placeholder="e.g. direct_samp=2"> <span class="note">key=value, comma-separated; RTL-SDR on HF: direct_samp=2</span></div>
     </div>
     <div class="grid2">
       <div class="card"><h2>Station</h2>
@@ -435,6 +436,8 @@ function collect(){
   s.radio.gain = null;
   s.radio.ppm = +$("#s-ppm").value || 0;
   s.radio.upconverterHz = +$("#s-upconv").value || 0;
+  s.radio.settings = {};
+  for(const kv of $("#s-drv").value.split(",")){ const [k, ...v] = kv.split("="); if(k.trim() && v.length) s.radio.settings[k.trim()] = v.join("=").trim(); }
   s.station.name = $("#s-name").value; s.station.location = $("#s-loc").value.trim();
   s.decoding.decoders = +$("#s-dec").value || 8;
   s.decoding.staleHours = +$("#s-stale").value || 24; s.decoding.goneDays = +$("#s-gone").value || 7;
@@ -466,6 +469,7 @@ async function loadSettings(){
   if(SET.advancedConfig) msg("warn", "Your watch.toml has parts this page can't edit (several SDRs, fixed channels or a command source). Saving here sets up one SDR scanning the chosen bands and keeps the rest of the file.");
   $("#s-bands").innerHTML = BANDS.map(b => `<label><input type="checkbox" value="${b}" ${SET.radio.bands.includes(b) ? "checked" : ""}>${b}</label>`).join("");
   $("#s-ppm").value = SET.radio.ppm; $("#s-upconv").value = SET.radio.upconverterHz;
+  $("#s-drv").value = Object.entries(SET.radio.settings || {}).map(([k,v]) => `${k}=${v}`).join(", ");
   $("#s-name").value = SET.station.name; $("#s-loc").value = SET.station.location;
   $("#s-dec").value = SET.decoding.decoders; $("#s-stale").value = SET.decoding.staleHours; $("#s-gone").value = SET.decoding.goneDays;
   $("#s-dir").value = SET.atlas.url; $("#s-acc").value = SET.atlas.accountsUrl || ""; $("#s-contrib").checked = SET.contribute.enabled;
