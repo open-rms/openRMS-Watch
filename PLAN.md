@@ -119,7 +119,7 @@ heard in clear; anything still ambiguous shows as "one of: A, B". Token kept in 
 | **W2** ✅ | Uploader (pasted token), callsign list with frequency-aware naming, contributor settings | Atlas A (watchers, watcher keys, ingest, callsign list) |
 | **W2b** ✅ | One-click "Link to openRMS" (device code) | Atlas D (device authorization) |
 | **W3** (mostly) | Done: tarball + `install.sh` (desktop/headless, `--port`), systemd units, Tauri desktop app (tray, autostart) as .deb/.rpm/AppImage, Docker builds per architecture, release workflow. To do: first CI run, download page on watch.openrms.dev | — |
-| **W4** | Pi image, auto-update, KiwiSDR source, modem73 / Data2G detectors | — |
+| **W4** | Pi image, auto-update, KiwiSDR source, more modes: modem73 / Data2G detectors, and VARA/XARA via XARA's MIT-licensed `xara-monitor` (github.com/NR5P/xara, Rust; a passive VARA HF monitor, so it can sit beside Mercury the same way). Some gateways already list XARA + MERCURY + DATA2G service codes | — |
 
 Atlas side, agreed with Atlas session (estimates are theirs): **A** watchers, watcher
 key type, ingest, callsign list, "My watchers" page (about 1 day); **B** sightings, "Heard on air"
