@@ -1,9 +1,9 @@
-//! Contributing to the openRMS Directory (openRMS-Spec/watch/feed.md), and the
-//! Directory's callsign list for local naming.
+//! Contributing to openRMS-Atlas (openRMS-Spec/watch/feed.md), and Atlas's
+//! callsign list for local naming.
 //!
 //! Events go into a local `outbox` table first, so nothing heard is lost while
 //! offline or after a restart; a loop sends them in NDJSON batches. Uploading is
-//! opt-in; the callsign list is fetched whenever a Directory URL is set.
+//! opt-in; the callsign list is fetched whenever an Atlas URL is set.
 
 use crate::db::{self, kv_get, kv_set, now_ms};
 use anyhow::{Context, Result};
@@ -53,7 +53,7 @@ pub struct ReceiverMeta {
     pub ppm: f64,
 }
 
-/// Optional fields are left out rather than sent as null (the Directory's
+/// Optional fields are left out rather than sent as null (openRMS-Atlas's
 /// validation, and smaller batches).
 fn strip_nulls(v: &Value) -> Value {
     match v {
@@ -175,7 +175,7 @@ fn proc_cpu_s() -> f64 {
 
 pub struct UploaderCfg {
     pub db: PathBuf,
-    pub directory_url: Option<String>,
+    pub atlas_url: Option<String>,
     pub enabled: bool,
     pub token: Option<String>,
     pub interval: Duration,
@@ -202,7 +202,7 @@ pub fn run(cfg: UploaderCfg, stop: Arc<AtomicBool>) {
     while !stop.load(Ordering::Relaxed) {
         std::thread::sleep(Duration::from_millis(500));
         let now = Instant::now();
-        if let Some(url) = &cfg.directory_url {
+        if let Some(url) = &cfg.atlas_url {
             if now >= next_calls {
                 match refresh_callsigns(&c, &agent, url) {
                     Ok(Some(n)) => info!("callsign list: {n} callsigns from {url}"),
@@ -215,7 +215,7 @@ pub fn run(cfg: UploaderCfg, stop: Arc<AtomicBool>) {
         if !cfg.enabled {
             continue;
         }
-        let (Some(url), Some(token)) = (&cfg.directory_url, &cfg.token) else { continue };
+        let (Some(url), Some(token)) = (&cfg.atlas_url, &cfg.token) else { continue };
         if now >= next_status {
             let cpu = proc_cpu_s();
             let pct = 100.0 * (cpu - last_cpu) / last_cpu_t.elapsed().as_secs_f64().max(1.0);

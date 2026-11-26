@@ -1,8 +1,8 @@
-//! Name the station behind a Mercury CRC16, the same way the Directory does
-//! (openRMS-Spec/watch/feed.md section 3).
+//! Name the station behind a Mercury CRC16, the same way openRMS-Atlas does
+//! (openRMS-Spec/watch/feed.md section 3), the same rules openRMS-Atlas uses.
 //!
 //! CRC16 collisions are certain at the size of the gateway list, so a CRC maps to
-//! candidates: callsigns we heard in clear plus the Directory's list. They are
+//! candidates: callsigns we heard in clear plus openRMS-Atlas's list. They are
 //! narrowed by (1) a listed Mercury channel within 200 Hz of the heard dial,
 //! (2) Mercury-capable gateways over others, (3) callsigns heard in clear.
 //! A station heard calling CQ under that CRC wins outright ("heard").

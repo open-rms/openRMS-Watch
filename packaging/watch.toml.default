@@ -17,8 +17,8 @@ ppm = 0
 
 # No SDR chosen yet: open the web page, Settings tab, pick your SDR and bands.
 
-[directory]
-# url = "https://..."           # the openRMS site; names stations and enables contributing
+[atlas]
+# url = "https://atlas.openrms.dev"   # openRMS-Atlas: names stations and enables contributing
 
 [contribute]
 enabled = false

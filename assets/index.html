@@ -148,7 +148,7 @@ canvas.spec{width:100%;height:110px;display:block;background:var(--bg);border-ra
     </div>
     <div class="card"><h2>Contribute to openRMS</h2>
       <p class="note">Off: everything stays on this computer. On: what this watcher hears is also sent to the openRMS site (live feed, "heard on air" on gateway pages, contributor list). Create a watcher under <i>Dashboard → Watchers</i> on the site and paste its key here.</p>
-      <div class="row"><label>Directory URL</label><input type="text" id="s-dir" placeholder="https://directory.openrms.dev"> <span class="note">also used to name stations, even when not contributing</span></div>
+      <div class="row"><label>Atlas URL</label><input type="text" id="s-dir" placeholder="https://atlas.openrms.dev"> <span class="note">also used to name stations, even when not contributing</span></div>
       <div class="row"><label>Accounts URL</label><input type="text" id="s-acc" placeholder="https://auth.openrms.dev"> <span class="note">where "Link to openRMS" signs in; leave empty for the default</span></div>
       <div class="row"><label>Contribute</label><input type="checkbox" id="s-contrib"></div>
       <div class="row"><label>Link this watcher</label><button id="s-link" type="button">Link to openRMS</button> <span class="note">opens the site, you approve, and the key is filled in for you</span></div>
@@ -373,7 +373,7 @@ async function loadStatus(){
       ? (c.error ? `<div class="bad">${esc(c.error)}</div>` : `<div class="ok">Contributing. Last upload ${c.lastOkMs ? ago(c.lastOkMs) : "pending"}.</div>`)
         + `<div class="note">${c.queue} waiting · ${c.sent24h} sent in 24 h</div>`
       : `<div class="note">Off: everything stays on this computer.</div>`)
-    + `<div class="note">${c.directoryCallsigns} callsigns from the Directory${c.callsignsUpdatedMs ? ", updated "+ago(c.callsignsUpdatedMs) : ""}.</div>
+    + `<div class="note">${c.directoryCallsigns} callsigns from openRMS-Atlas${c.callsignsUpdatedMs ? ", updated "+ago(c.callsignsUpdatedMs) : ""}.</div>
        <div class="note">${esc(d.version)} · running ${ago(eng.started_ms).replace(" ago","")}</div>`;
   $("#st-decs").innerHTML = eng.decoders.length ? eng.decoders.map(x =>
     `<div class="dec"><b>Decoder ${x.idx}</b><span class="badge ${x.state==="pinned"||x.state==="confirmed" ? "s-active" : x.state==="listening" ? "s-unverified" : "c-unknown"}">${x.state}</span>
@@ -438,8 +438,8 @@ function collect(){
   s.station.name = $("#s-name").value; s.station.location = $("#s-loc").value.trim();
   s.decoding.decoders = +$("#s-dec").value || 8;
   s.decoding.staleHours = +$("#s-stale").value || 24; s.decoding.goneDays = +$("#s-gone").value || 7;
-  s.directory.url = $("#s-dir").value.trim();
-  s.directory.accountsUrl = $("#s-acc").value.trim();
+  s.atlas.url = $("#s-dir").value.trim();
+  s.atlas.accountsUrl = $("#s-acc").value.trim();
   s.contribute.enabled = $("#s-contrib").checked;
   const tok = $("#s-token").value.trim(); s.contribute.token = tok ? tok : null;
   s.web.port = +$("#s-port").value || 17373; s.web.lan = $("#s-lan").checked;
@@ -468,7 +468,7 @@ async function loadSettings(){
   $("#s-ppm").value = SET.radio.ppm; $("#s-upconv").value = SET.radio.upconverterHz;
   $("#s-name").value = SET.station.name; $("#s-loc").value = SET.station.location;
   $("#s-dec").value = SET.decoding.decoders; $("#s-stale").value = SET.decoding.staleHours; $("#s-gone").value = SET.decoding.goneDays;
-  $("#s-dir").value = SET.directory.url; $("#s-acc").value = SET.directory.accountsUrl || ""; $("#s-contrib").checked = SET.contribute.enabled;
+  $("#s-dir").value = SET.atlas.url; $("#s-acc").value = SET.atlas.accountsUrl || ""; $("#s-contrib").checked = SET.contribute.enabled;
   $("#s-tokstate").textContent = SET.contribute.tokenSet ? "a key is saved; paste a new one to replace it" : "no key saved";
   $("#s-port").value = SET.web.port; $("#s-lan").checked = SET.web.lan;
   $("#s-pwstate").textContent = SET.web.passwordSet ? "a password is set" : "no password";

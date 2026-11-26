@@ -21,7 +21,7 @@ pub struct Settings {
     pub station: Station,
     pub radio: Radio,
     pub decoding: Decoding,
-    pub directory: Directory,
+    pub atlas: Atlas,
     pub contribute: Contribute,
     /// Read-only: the config has parts the page can't edit (shown as a note).
     pub advanced_config: bool,
@@ -74,7 +74,7 @@ pub struct Decoding {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase", default)]
-pub struct Directory {
+pub struct Atlas {
     pub url: String,
     /// openRMS-Accounts (sign-in for "Link to openRMS"); empty = https://auth.openrms.dev
     pub accounts_url: String,
@@ -139,9 +139,9 @@ pub fn from_config(cfg: &Config) -> Settings {
             stale_hours: cfg.watch.stale_hours,
             gone_days: cfg.watch.gone_days,
         },
-        directory: Directory {
-            url: cfg.directory.url.clone().unwrap_or_default(),
-            accounts_url: cfg.directory.accounts_url.clone().unwrap_or_default(),
+        atlas: Atlas {
+            url: cfg.atlas.url.clone().unwrap_or_default(),
+            accounts_url: cfg.atlas.accounts_url.clone().unwrap_or_default(),
         },
         contribute: Contribute {
             enabled: cfg.contribute.enabled,
@@ -270,16 +270,18 @@ pub fn apply(text: &str, s: &Settings, plan: Option<&crate::plan::Plan>) -> Resu
         }
     }
     {
-        let d = table(&mut doc, "directory");
-        if s.directory.url.trim().is_empty() {
+        // the section was [directory] before openRMS-Atlas: drop the old name
+        doc.remove("directory");
+        let d = table(&mut doc, "atlas");
+        if s.atlas.url.trim().is_empty() {
             d.remove("url");
         } else {
-            d["url"] = value(s.directory.url.trim().trim_end_matches('/'));
+            d["url"] = value(s.atlas.url.trim().trim_end_matches('/'));
         }
-        if s.directory.accounts_url.trim().is_empty() {
+        if s.atlas.accounts_url.trim().is_empty() {
             d.remove("accounts_url");
         } else {
-            d["accounts_url"] = value(s.directory.accounts_url.trim().trim_end_matches('/'));
+            d["accounts_url"] = value(s.atlas.accounts_url.trim().trim_end_matches('/'));
         }
     }
     {
@@ -344,6 +346,22 @@ segments = [[7000000, 7300000]]
 "#;
 
     #[test]
+    fn old_directory_section_loads_and_is_renamed_on_save() {
+        let dir = std::env::temp_dir().join(format!("orw-atlas-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("watch.toml");
+        let old = format!("{BASE}\n[directory]\nurl = \"https://atlas.openrms.dev\"\n");
+        std::fs::write(&p, &old).unwrap();
+        let cfg = Config::load(&p).unwrap();
+        assert_eq!(cfg.atlas.url.as_deref(), Some("https://atlas.openrms.dev"), "[directory] is an alias of [atlas]");
+        let s = from_config(&cfg);
+        let plan = crate::plan::Plan { rate: 12_800_000, center_hz: 12_200_000, segments: vec![], cores: 1.0 };
+        let text = apply(&old, &s, Some(&plan)).unwrap();
+        assert!(text.contains("[atlas]") && !text.contains("[directory]"), "{text}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn round_trip_keeps_comments_and_validates() {
         let dir = std::env::temp_dir().join(format!("orw-settings-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -358,7 +376,7 @@ segments = [[7000000, 7300000]]
         s.radio.gains = [("LNA".to_string(), 24.0)].into();
         s.web.port = 18000;
         s.web.password = Some("hunter22".into());
-        s.directory.url = "http://localhost:8787/".into();
+        s.atlas.url = "http://localhost:8787/".into();
         s.contribute = Contribute { enabled: true, token_set: false, token: Some("ormsw_abc".into()) };
         let plan = crate::plan::Plan { rate: 16_000_000, center_hz: 12_200_000, segments: vec![], cores: 1.0 };
         let text = apply(BASE, &s, Some(&plan)).unwrap();

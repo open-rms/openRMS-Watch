@@ -23,20 +23,20 @@ pub struct AppState {
     /// saving settings asks the process to restart itself
     pub restart: Arc<tokio::sync::Notify>,
     pub restart_flag: Arc<std::sync::atomic::AtomicBool>,
-    pub directory_url: Option<String>,
+    pub atlas_url: Option<String>,
     pub accounts_url: String,
     pub link: Arc<std::sync::Mutex<LinkState>>,
     /// the short-lived Accounts token while the user picks a watcher (never sent to the page)
     pub link_token: Arc<std::sync::Mutex<Option<String>>>,
 }
 
-/// One-click linking to the Directory (RFC 8628 device flow, feed.md section 1).
+/// One-click linking to openRMS-Atlas (RFC 8628 device flow, feed.md section 1).
 #[derive(Serialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct LinkState {
     /// idle | pending | choose | done | error
     pub status: &'static str,
-    /// the user's watchers on the Directory, to pick from ("choose")
+    /// the user's watchers on openRMS-Atlas, to pick from ("choose")
     pub watchers: Vec<serde_json::Value>,
     pub user_code: Option<String>,
     pub verification_uri: Option<String>,
@@ -428,13 +428,13 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Sen
 }
 
 /// Start "Link to openRMS": a device code from openRMS-Accounts (RFC 8628) for
-/// the Directory as audience (identity.md section 3).
+/// openRMS-Atlas as audience (identity.md section 3).
 async fn link_start(State(st): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     if let Err(r) = check_auth(&st, &headers, true) {
         return r;
     }
-    let Some(dir) = st.directory_url.clone().map(|u| u.trim_end_matches('/').to_string()) else {
-        return (StatusCode::BAD_REQUEST, "set the Directory URL in Settings first, save, then link").into_response();
+    let Some(dir) = st.atlas_url.clone().map(|u| u.trim_end_matches('/').to_string()) else {
+        return (StatusCode::BAD_REQUEST, "set the Atlas URL in Settings first, save, then link").into_response();
     };
     let accounts = st.accounts_url.clone();
     let (acc, d2) = (accounts.clone(), dir.clone());
@@ -560,7 +560,7 @@ struct LinkFinish {
     gridsquare: Option<String>,
 }
 
-/// The user picked (or named) a watcher: get its key from the Directory, save it, restart.
+/// The user picked (or named) a watcher: get its key from openRMS-Atlas, save it, restart.
 async fn link_finish(State(st): State<Arc<AppState>>, headers: HeaderMap, Json(f): Json<LinkFinish>) -> Response {
     if let Err(r) = check_auth(&st, &headers, true) {
         return r;
@@ -568,8 +568,8 @@ async fn link_finish(State(st): State<Arc<AppState>>, headers: HeaderMap, Json(f
     let Some(token) = st.link_token.lock().unwrap().clone() else {
         return (StatusCode::BAD_REQUEST, "start linking first").into_response();
     };
-    let Some(dir) = st.directory_url.clone().map(|u| u.trim_end_matches('/').to_string()) else {
-        return (StatusCode::BAD_REQUEST, "no Directory URL").into_response();
+    let Some(dir) = st.atlas_url.clone().map(|u| u.trim_end_matches('/').to_string()) else {
+        return (StatusCode::BAD_REQUEST, "no Atlas URL").into_response();
     };
     let body = match (&f.watcher_id, &f.name) {
         (Some(id), _) if !id.is_empty() => serde_json::json!({"watcherId": id}),
@@ -596,13 +596,13 @@ async fn link_finish(State(st): State<Arc<AppState>>, headers: HeaderMap, Json(f
         Err(e) => {
             link_set(&st, |l| {
                 l.status = "error";
-                l.error = Some(format!("the Directory refused: {e}"));
+                l.error = Some(format!("openRMS-Atlas refused: {e}"));
             });
-            return (StatusCode::BAD_GATEWAY, format!("the Directory refused: {e}")).into_response();
+            return (StatusCode::BAD_GATEWAY, format!("openRMS-Atlas refused: {e}")).into_response();
         }
     };
     let Some(key) = v["key"].as_str().map(String::from) else {
-        return (StatusCode::BAD_GATEWAY, "no key in the Directory's answer").into_response();
+        return (StatusCode::BAD_GATEWAY, "no key in openRMS-Atlas's answer").into_response();
     };
     let name = v["name"].as_str().unwrap_or("watcher").to_string();
     *st.link_token.lock().unwrap() = None; // single use: discard

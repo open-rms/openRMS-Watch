@@ -1,11 +1,15 @@
 # openRMS-Watch: community watcher plan (agreed 2026-11-25)
 
+> openRMS-Directory was renamed **openRMS-Atlas** (`https://atlas.openrms.dev`) on 2026-11-25;
+> this plan uses the new name throughout. The watcher's config section is `[atlas]`
+> (`[directory]` still loads, with a warning).
+
 **Scope (maintainer, 2026-11-25): Linux only for now**, every distribution family and
 architecture we can build for. Windows and macOS are out of scope until further notice.
 
 Goal: anyone with an SDR can install a watcher, pick their radio and bands in a settings page,
 and either keep the results to themselves or contribute them live to the openRMS site. The feed
-contract with the Directory is `../openRMS-Spec/watch/feed.md`.
+contract with Atlas is `../openRMS-Spec/watch/feed.md`.
 
 ## 1. Shape: one engine, two front ends
 
@@ -14,7 +18,7 @@ openrms-watch (Rust, one binary)                   front ends
  ├─ SDR input (SoapySDR | command | file)           ├─ Desktop: Tauri app = tray icon + webview of the
  ├─ wideband scan + decoder pool (Mercury procs)    │   local web UI, start at login, starts/stops the engine
  ├─ local SQLite + local web UI (incl. Settings)    └─ Headless: systemd service (system or
- └─ uploader (optional, to the Directory)               user unit); settings only via the web UI
+ └─ uploader (optional, to Atlas)               user unit); settings only via the web UI
 ```
 
 The web UI is the only settings UI, so desktop and headless never drift apart. The desktop app
@@ -33,7 +37,7 @@ Advanced or Expert), per the umbrella rule.
 | **Radio** | Device picker (enumerated, with "Test" showing a live spectrum strip); band presets (40/30/20m, 80m, 60m, 17m...) checked off; gain slider with a clipping meter | Sample rate, centre frequency (auto-chosen to fit the bands and avoid DC), upconverter offset, direct sampling, antenna port, command/file sources |
 | **Calibrate** | Wizard: ATSC pilots (US), WWV/CHU carrier, or enter ppm | Per-receiver fixed offset |
 | **Decoding** | Number of decoders (with a CPU estimate) | Detector threshold, pre-roll, hold times, connect-only |
-| **Contribute** | Off (local only) / On; "Link to openRMS" (device code) or paste a token; watcher name, grid, location precision, show me in the contributor list | Directory URL (self-hosted directories), upload interval |
+| **Contribute** | Off (local only) / On; "Link to openRMS" (device code) or paste a token; watcher name, grid, location precision, show me in the contributor list | Atlas URL (self-hosted directories), upload interval |
 | **Web & ports** | Web page port; who can open it: this computer only (default) or my network (requires a password) | Decoder port range, data retention |
 
 A "what will this hear?" panel turns the choices into plain words: which bands, roughly how many
@@ -101,7 +105,7 @@ token errors. Token: an `ormsw_` key the user creates under "My watchers" on the
 into the Contribute page; one-click linking (device code, traded once for a key) comes later.
 
 Daily refresh of `/api/v1/watch/callsigns` (callsigns with their listed dial frequencies) replaces
-the hand-made calls file. Naming follows the same rules as the Directory (feed.md section 3):
+the hand-made calls file. Naming follows the same rules as Atlas (feed.md section 3):
 CRC16 collisions are certain at this list size, so a CRC maps to candidates, narrowed by a listed
 Mercury channel within 200 Hz of the heard dial, then Mercury-capable gateways, then callsigns
 heard in clear; anything still ambiguous shows as "one of: A, B". Token kept in the OS keychain on desktop, otherwise in the config file with
@@ -112,31 +116,31 @@ heard in clear; anything still ambiguous shows as "one of: A, B". Token kept in 
 | Phase | Watcher | Depends on |
 |---|---|---|
 | **W1** ✅ | SoapySDR input + device enumeration; settings API + pages; `--port` (default 17373), free decoder ports; Mercury localhost bind | — |
-| **W2** ✅ | Uploader (pasted token), callsign list with frequency-aware naming, contributor settings | Directory A (watchers, watcher keys, ingest, callsign list) |
-| **W2b** ✅ | One-click "Link to openRMS" (device code) | Directory D (device authorization) |
+| **W2** ✅ | Uploader (pasted token), callsign list with frequency-aware naming, contributor settings | Atlas A (watchers, watcher keys, ingest, callsign list) |
+| **W2b** ✅ | One-click "Link to openRMS" (device code) | Atlas D (device authorization) |
 | **W3** (mostly) | Done: tarball + `install.sh` (desktop/headless, `--port`), systemd units, Tauri desktop app (tray, autostart) as .deb/.rpm/AppImage, Docker builds per architecture, release workflow. To do: first CI run, download page on watch.openrms.dev | — |
 | **W4** | Pi image, auto-update, KiwiSDR source, modem73 / Data2G detectors | — |
 
-Directory side, agreed with the Directory session (estimates are theirs): **A** watchers, watcher
+Atlas side, agreed with Atlas session (estimates are theirs): **A** watchers, watcher
 key type, ingest, callsign list, "My watchers" page (about 1 day); **B** sightings, "Heard on air"
 on gateway pages, contributor list and page (about 1 day); **C** live SSE stream and /live page
 (half a day); **D** device-code linking (half a day); plus a moderator Watchers tab.
 
 ## Identity moving to openRMS-Accounts (2026-11-25)
 
-The user decided to move sign-in out of the Directory into openRMS-Accounts
+The user decided to move sign-in out of Atlas into openRMS-Accounts
 (`https://auth.openrms.dev`, contract `../openRMS-Spec/accounts/identity.md`). For the watcher:
 
-- **Unchanged:** `ormsw_` watcher keys are still minted and checked by the Directory; uploads,
+- **Unchanged:** `ormsw_` watcher keys are still minted and checked by Atlas; uploads,
   `/watch/callsigns`, the outbox and pasted keys work as today.
-- **Changes (done 2026-11-25 after the user's go, relayed by openrms-84; tested end to end against Accounts :8789 and the Directory :8787):** "Link to openRMS" runs the
+- **Changes (done 2026-11-25 after the user's go, relayed by openrms-84; tested end to end against Accounts :8789 and Atlas :8787):** "Link to openRMS" runs the
   RFC 8628 device flow against Accounts (client `openrms-watch`, with
-  `resource=https://directory.openrms.dev` so the token's audience is the Directory). The result is a
+  `resource=https://atlas.openrms.dev` so the token's audience is Atlas). The result is a
   short-lived OAuth access token, used once as `Authorization: Bearer` to get a watcher key from
-  the Directory, then discarded. Config gains an Accounts URL next to the Directory URL (both
+  Atlas, then discarded. Config gains an Accounts URL next to Atlas URL (both
   default to the production hosts once they exist).
 - **Agreed with openrms-84 (identity.md §5, "Watch linking after the split"):** the device
-  authorization request carries `resource=https://directory.openrms.dev` (supported by
+  authorization request carries `resource=https://atlas.openrms.dev` (supported by
   `@better-auth/oauth-provider` 1.7.28, bound to the approval). With that token as Bearer the
   watcher calls `GET /api/v1/me/watchers` (to let the user pick one in the watcher's own page)
   and `POST /api/v1/watch/link` `{watcherId}` or `{name, gridsquare?}` and gets
@@ -150,11 +154,11 @@ The user decided to move sign-in out of the Directory into openRMS-Accounts
   `device_authorization_endpoint` and `token_endpoint` from
   `/.well-known/openid-configuration`. Device code request is form-encoded:
   `client_id=openrms-watch`, `scope=openid callsign clubs offline_access`,
-  `resource=<Directory URL>`; poll the token endpoint with the device_code grant. The access
-  token (JWT, ~15 min, no `role` claim) is the Bearer for the Directory's `GET /me/watchers` and
-  `POST /watch/link`. Keep the current Directory-native flow until the Directory switches.
-- Hosts (user, 2026-11-25): one subdomain per project, no shared `api.` name. Directory
-  `directory.openrms.dev` (token audience `https://directory.openrms.dev`); this project
+  `resource=<Atlas URL>`; poll the token endpoint with the device_code grant. The access
+  token (JWT, ~15 min, no `role` claim) is the Bearer for Atlas's `GET /me/watchers` and
+  `POST /watch/link`. Keep the current Atlas-native flow until Atlas switches.
+- Hosts (user, 2026-11-25): one subdomain per project, no shared `api.` name. Atlas
+  `atlas.openrms.dev` (token audience `https://atlas.openrms.dev`); this project
   `watch.openrms.dev` for downloads and docs (static, Cloudflare; set up with the first release).
 
 ## 10. Decisions (maintainer, 2026-11-25)

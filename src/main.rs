@@ -157,9 +157,9 @@ fn main() -> Result<()> {
             let stop = Arc::new(AtomicBool::new(false));
             let (tx, rx) = std::sync::mpsc::channel::<runner::Event>();
             let window = cfg.watch.attempt_window_s;
-            let contribute = cfg.contribute.enabled && cfg.contribute.token.is_some() && cfg.directory.url.is_some();
+            let contribute = cfg.contribute.enabled && cfg.contribute.token.is_some() && cfg.atlas.url.is_some();
             if cfg.contribute.enabled && !contribute {
-                warn!("contribute is on but [directory] url or [contribute] token is missing; staying local");
+                warn!("contribute is on but [atlas] url or [contribute] token is missing; staying local");
             }
             let meta: std::collections::HashMap<String, upload::ReceiverMeta> = cfg
                 .receivers
@@ -203,7 +203,7 @@ fn main() -> Result<()> {
             {
                 let ucfg = upload::UploaderCfg {
                     db: cfg.watch.db.clone(),
-                    directory_url: cfg.directory.url.clone(),
+                    atlas_url: cfg.atlas.url.clone(),
                     enabled: contribute,
                     token: cfg.contribute.token.clone(),
                     interval: std::time::Duration::from_secs(cfg.contribute.interval_s.max(5)),
@@ -351,8 +351,8 @@ fn serve(cfg: &config::Config, config_path: &std::path::Path, stop: Option<Arc<A
         lan: !matches!(host, "127.0.0.1" | "localhost" | "::1" | "[::1]"),
         restart: restart.clone(),
         restart_flag: restart_flag.clone(),
-        directory_url: cfg.directory.url.clone(),
-        accounts_url: cfg.directory.accounts(),
+        atlas_url: cfg.atlas.url.clone(),
+        accounts_url: cfg.atlas.accounts(),
         link: Default::default(),
         link_token: Default::default(),
     };

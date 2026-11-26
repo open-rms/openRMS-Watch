@@ -13,8 +13,10 @@ pub struct Config {
     pub widebands: Vec<Wideband>,
     #[serde(default)]
     pub web: WebCfg,
-    #[serde(default)]
-    pub directory: DirectoryCfg,
+    /// `[atlas]` (openRMS-Atlas, formerly openRMS-Directory). The old `[directory]`
+    /// section name still loads, with a deprecation warning.
+    #[serde(default, alias = "directory")]
+    pub atlas: AtlasCfg,
     #[serde(default)]
     pub contribute: Contribute,
 }
@@ -28,17 +30,17 @@ pub struct WebCfg {
     pub password_hash: Option<String>,
 }
 
-/// The openRMS Directory: its callsign list names stations locally (no account
-/// needed), and contributing uploads to it.
+/// openRMS-Atlas (the gateway registry, formerly openRMS-Directory): its callsign
+/// list names stations locally (no account needed), and contributing uploads to it.
 #[derive(Debug, Deserialize, Default, Clone)]
-pub struct DirectoryCfg {
-    /// e.g. "https://directory.openrms.dev"; unset = fully offline.
+pub struct AtlasCfg {
+    /// e.g. "https://atlas.openrms.dev"; unset = fully offline.
     pub url: Option<String>,
     /// openRMS-Accounts, where "Link to openRMS" signs in (default https://auth.openrms.dev).
     pub accounts_url: Option<String>,
 }
 
-impl DirectoryCfg {
+impl AtlasCfg {
     pub fn accounts(&self) -> String {
         self.accounts_url.clone().unwrap_or_else(|| "https://auth.openrms.dev".into()).trim_end_matches('/').to_string()
     }
@@ -204,6 +206,11 @@ impl Config {
     pub fn load(path: &Path) -> Result<Config> {
         let text = std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         let mut cfg: Config = toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+        if let Ok(raw) = text.parse::<toml::Table>() {
+            if raw.contains_key("directory") {
+                tracing::warn!("{}: [directory] is now [atlas] (openRMS-Atlas); please rename the section", path.display());
+            }
+        }
         // Relative paths are relative to the config file, made absolute because
         // Mercury runs from its own working directory.
         let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));

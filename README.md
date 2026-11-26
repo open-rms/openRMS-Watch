@@ -4,7 +4,7 @@
 air (client callsign, RMS identity, frequency, time, SNR) to SQLite, and serves a filterable
 web page and JSON/CSV API. · **Consumes:** a patched Mercury (separate process, TCP only),
 SDRs through SoapySDR (or any IQ/audio command, e.g. KiwiSDR), and optionally the
-openRMS-Directory (callsign list, uploads) and openRMS-Accounts (linking). · **Status:** alpha (verified on recorded and synthetic
+openRMS-Atlas (callsign list, uploads; formerly openRMS-Atlas) and openRMS-Accounts (linking). · **Status:** alpha (verified on recorded and synthetic
 audio; not yet heard a real Mercury station on air). · **License:** AGPL-3.0-or-later.
 
 ## How it works
@@ -80,10 +80,10 @@ Then open the page (default **http://127.0.0.1:17373/**, override with `--port`,
 watcher picks the sample rate and centre frequency itself and says if the bands don't fit.
 **Status** shows SDR levels (clipping, near full scale), a spectrum per band and the decoders.
 
-**Contributing** is off by default. Set the Directory URL (production:
-`https://directory.openrms.dev`), then **Link to openRMS**: the watcher gets a code from
+**Contributing** is off by default. Set the Atlas URL (production:
+`https://atlas.openrms.dev`), then **Link to openRMS**: the watcher gets a code from
 openRMS-Accounts (`accounts_url`, default `https://auth.openrms.dev`), you approve it on the
-site, pick or name your watcher in the watcher's own Settings page, and the Directory hands it a
+site, pick or name your watcher in the watcher's own Settings page, and openRMS-Atlas hands it a
 watcher key. Or paste a key made under "My watchers" on the site. Events queue locally and
 upload every 15 s.
 

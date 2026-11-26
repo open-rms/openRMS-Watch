@@ -54,3 +54,12 @@ command = "rtl_fm -M usb -f {dial_hz} -s 8000 -E direct2 -p {ppm} -"
 # HackRF and Pluto/Pluto+ only give raw IQ from the command line here; they
 # need the built-in channelizer (planned). The Pluto+ tunes 70 MHz-6 GHz, so
 # HF needs an upconverter; the HackRF reaches HF but is weak there.
+
+# --- openRMS-Atlas (optional) ------------------------------------------------
+# Names stations from Atlas's gateway list, and is where contributions go.
+# [atlas]
+# url = "https://atlas.openrms.dev"
+# accounts_url = "https://auth.openrms.dev"   # for "Link to openRMS" (the default)
+#
+# [contribute]
+# enabled = true          # or use Settings -> Link to openRMS
