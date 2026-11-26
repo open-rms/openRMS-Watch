@@ -1,0 +1,29 @@
+# Every push and pull request: unit tests plus the recorded-exchange smoke test
+# (a real Mercury CALL/ACCEPT/DISCONNECT replayed through a monitor-mode Mercury).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsoapysdr-dev libasound2-dev libpulse-dev build-essential pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Patched Mercury
+        run: scripts/build-mercury.sh https://github.com/Rhizomatica/mercury.git
+      - name: Unit tests
+        run: cargo test --release
+      - name: Smoke test
+        run: |
+          timeout 75 ./target/release/openrms-watch -c examples/replay-test.toml run > replay.log 2>&1 || true
+          grep -E "MONITOR DATAC16 (CALL|ACCEPT|DISCONNECT)" replay.log
+          grep -q "MONITOR DATAC16 ACCEPT" replay.log
