@@ -1,0 +1,56 @@
+# openrms-watch example config. Copy to watch.toml and edit.
+#
+# Each [[channel]] is one RMS dial frequency to watch. Mercury only locks onto
+# a signal within about +/-50 Hz of where it expects it, so:
+#   - channels must be the exact USB dial frequencies RMS stations use
+#     (blind scanning a band does not work), and
+#   - each receiver's frequency error must be corrected (ppm / offset_hz).
+
+[watch]
+mercury = "../.build/mercury/mercury"   # from scripts/build-mercury.sh
+db = "../watch.db"
+listen = "127.0.0.1:17373"               # local only; put a reverse proxy in front to publish
+base_port = 17400                        # Mercury instances use base_port + 3*i .. +2
+stale_hours = 24
+gone_days = 7
+attempt_window_s = 180
+connect_only = true                     # ~21% of a core per channel instead of ~45%
+calls_file = "calls.example.txt"        # exact callsigns (with SSID) to name RMS CRCs
+
+# --- KiwiSDR (the realistic HF path) -----------------------------------------
+# Needs kiwiclient: git clone https://github.com/jks-prv/kiwiclient
+# One Kiwi user slot per channel; public Kiwis often time-limit users, and the
+# watcher reconnects with backoff. Use them sparingly and politely.
+[[receiver]]
+id = "kiwi-example"
+name = "Some public KiwiSDR"
+kind = "kiwisdr"
+location = "AA00"
+offset_hz = 0        # most Kiwis are GPS-disciplined
+
+[[channel]]
+receiver = "kiwi-example"
+dial_hz = 7101500    # placeholder: use real Mercury RMS dial frequencies
+label = "40m"
+enabled = false
+command = "python3 /path/to/kiwiclient/kiwirecorder.py -s kiwi.example.org -p 8073 -f {dial_khz} -m usb -L 100 -H 2900 --ncomp --nc -r 8000 -q -u openrms-watch"
+
+# --- RTL-SDR, one channel per dongle ---------------------------------------
+# HF needs direct sampling (-E direct2, RTL-SDR Blog V3/V4) or an upconverter.
+[[receiver]]
+id = "rtl"
+name = "RTL-SDR V4, direct sampling"
+kind = "local-sdr"
+location = "AA00"
+ppm = 0      # measure it; with {ppm} in the command rtl_fm corrects it
+
+[[channel]]
+receiver = "rtl"
+dial_hz = 7101500
+label = "40m"
+enabled = false
+command = "rtl_fm -M usb -f {dial_hz} -s 8000 -E direct2 -p {ppm} -"
+
+# HackRF and Pluto/Pluto+ only give raw IQ from the command line here; they
+# need the built-in channelizer (planned). The Pluto+ tunes 70 MHz-6 GHz, so
+# HF needs an upconverter; the HackRF reaches HF but is weak there.

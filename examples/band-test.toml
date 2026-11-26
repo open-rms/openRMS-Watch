@@ -1,0 +1,24 @@
+# Wideband test: a synthetic 40m recording (scripts/make_iq_band.py) with two
+# Mercury exchanges at frequencies the watcher is not told about.
+[watch]
+mercury = "../.build/mercury/mercury"
+db = "../.build/band-test.db"
+listen = "127.0.0.1:8092"
+base_port = 9700
+runtime_dir = "../.build/run-band"
+calls_file = "calls.example.txt"
+
+[[receiver]]
+id = "synthetic"
+name = "Synthetic 40m recording"
+kind = "file"
+location = "test"
+
+[[wideband]]
+receiver = "synthetic"
+file = "../.build/band40.cs8"
+format = "cs8"
+rate = 1600000
+center_hz = 7150000
+segments = [[7030000, 7130000], [7170000, 7300000]]
+decoders = 4

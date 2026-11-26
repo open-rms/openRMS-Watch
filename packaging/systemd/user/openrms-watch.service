@@ -1,0 +1,11 @@
+[Unit]
+Description=openRMS Watch (passive Mercury RMS monitor)
+
+[Service]
+Type=simple
+ExecStart=@BINDIR@/openrms-watch -c %h/.config/openrms-watch/watch.toml run
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

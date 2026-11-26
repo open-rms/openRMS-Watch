@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=openRMS Watch
+Comment=See the Mercury RMS stations your SDR hears
+Exec=sh -c '@BINDIR@/openrms-watch -c "$HOME/.config/openrms-watch/watch.toml" open'
+Icon=network-wireless
+Terminal=false
+Categories=HamRadio;Network;

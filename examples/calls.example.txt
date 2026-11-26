@@ -1,0 +1,4 @@
+# Known callsigns, exact on-air form including SSID, one per line.
+# Used only to name the station behind a CRC; never brute-force SSIDs here.
+Q1RMS-10
+Q2RMS-10

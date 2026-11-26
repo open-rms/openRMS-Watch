@@ -1,0 +1,10 @@
+The bundled `mercury` binary is Mercury by Rhizomatica (GPL-3.0-or-later),
+https://github.com/Rhizomatica/mercury, built from the upstream commit named in
+source/MERCURY_COMMIT with source/mercury-monitor-crc.patch applied (CRC fields
+on MONITOR lines, MFSK500 in the monitor, MERCURY_MONITOR_CONNECT_ONLY,
+MERCURY_BIND_ADDR). openrms-watch runs it as a separate program; it does not
+link it.
+
+Corresponding source: check out that commit from the upstream repository and
+apply the included patch (scripts/build-mercury.sh in openRMS-Watch does both).
+If you cannot get it that way, ask the openRMS maintainers for a copy.

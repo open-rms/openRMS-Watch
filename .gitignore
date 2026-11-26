@@ -1,0 +1,16 @@
+# build output
+/target
+/.build
+/dist
+# local data and personal config (watch.toml holds your SDR serial, ppm, keys)
+*.db
+*.db-*
+/watch.toml
+*.toml.bak
+*.toml.new
+# raw IQ / audio captures can contain real on-air callsigns; only tests/fixtures (fictional calls) are tracked
+*.cs8
+*.cu8
+*.cs16
+*.iq
+*.wav

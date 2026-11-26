@@ -1,0 +1,6 @@
+# musl build for Alpine Linux (dynamic: SoapySDR loads driver modules at runtime,
+# which a fully static binary cannot do).
+FROM alpine:3.20
+RUN apk add --no-cache build-base pkgconf curl git rust cargo \
+      soapy-sdr-dev alsa-lib-dev pulseaudio-dev linux-headers
+WORKDIR /src

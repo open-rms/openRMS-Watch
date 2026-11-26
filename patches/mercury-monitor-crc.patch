@@ -1,0 +1,111 @@
+diff --git i/data_interfaces/tcp_interfaces.c w/data_interfaces/tcp_interfaces.c
+index b3efabb8..891f7ba5 100644
+--- i/data_interfaces/tcp_interfaces.c
++++ w/data_interfaces/tcp_interfaces.c
+@@ -54,6 +54,18 @@
+ #include "modem.h"
+ #include "mercury_cli.h"
+ #include "framer.h"
++
++/* Address the TCP listeners bind to.  MERCURY_BIND_ADDR=127.0.0.1 keeps the
++ * control, data and broadcast ports off the network (openRMS-Watch runs its
++ * receive-only monitors that way); unset or unparseable: every interface. */
++static uint32_t tcp_bind_addr(void)
++{
++    const char *a = getenv("MERCURY_BIND_ADDR");
++    struct in_addr ia;
++    if (a && a[0] && inet_pton(AF_INET, a, &ia) == 1)
++        return ia.s_addr;
++    return htonl(INADDR_ANY);
++}
+ #include "hermes_log.h"
+ #include "radio_io.h"
+ #include "modem.h"
+@@ -370,7 +382,7 @@ static int open_listener_socket(int port, int port_type, const char *tag)
+ 
+     memset(&local_addr, 0, sizeof(local_addr));
+     local_addr.sin_family = AF_INET;
+-    local_addr.sin_addr.s_addr = INADDR_ANY;
++    local_addr.sin_addr.s_addr = tcp_bind_addr();
+     local_addr.sin_port = htons(port);
+ 
+     if (bind(fd, (struct sockaddr *)&local_addr, sizeof(local_addr)) < 0)
+@@ -2249,7 +2261,7 @@ void *tcp_server_thread(void *port_ptr)
+ 
+     memset(&local_addr, 0, sizeof(local_addr));
+     local_addr.sin_family = AF_INET;
+-    local_addr.sin_addr.s_addr = INADDR_ANY;
++    local_addr.sin_addr.s_addr = tcp_bind_addr();
+     local_addr.sin_port = htons(tcp_port);
+ 
+     if (bind(tcp_socket, (struct sockaddr *)&local_addr, sizeof(local_addr)) < 0)
+diff --git i/modem/modem.c w/modem/modem.c
+index 57f7c2b4..cf79d6ca 100644
+--- i/modem/modem.c
++++ w/modem/modem.c
+@@ -2371,11 +2371,18 @@ static void process_received_frame(const uint8_t *data,
+ /* Every mode Mercury puts on the air: control, the payload ladder, DATAC13 and
+  * the MFSK floor.  Mirrors the persistent pool (init_mode_pool_locked). */
+ static const int monitor_modes[] = {
+-    FREEDV_MODE_DATAC16, FREEDV_MODE_DATAC15, FREEDV_MODE_DATAC13,
++    FREEDV_MODE_DATAC16, MERCURY_MODE_MFSK, MERCURY_MODE_MFSK_N32,
++    FREEDV_MODE_DATAC15, FREEDV_MODE_DATAC13,
+     FREEDV_MODE_DATAC4,  FREEDV_MODE_DATAC3,  FREEDV_MODE_DATAC1,
+-    FREEDV_MODE_DATAC17, FREEDV_MODE_QAM16C2, MERCURY_MODE_MFSK,
++    FREEDV_MODE_DATAC17, FREEDV_MODE_QAM16C2,
+ };
+ #define MONITOR_MODE_COUNT (sizeof(monitor_modes) / sizeof(monitor_modes[0]))
++/* The first MONITOR_CONNECT_MODES entries are every carrier a CALL, ACCEPT,
++ * CQ or DISCONNECT goes out on: the control mode and the two MFSK floors
++ * (arq_call_carrier: MFSK, or MFSK500 for a BW500 station).  With
++ * MERCURY_MONITOR_CONNECT_ONLY set in the environment the monitor runs only
++ * those, a third of the CPU, for passive connect logging (openRMS-Watch). */
++#define MONITOR_CONNECT_MODES 3
+ 
+ static void rx_decoder_consume_chunk(rx_decoder_state_t *state,
+                                      const int16_t *samples, int sample_count,
+@@ -3101,8 +3108,11 @@ static int monitor_workers_start(rx_worker_t *mws, int max)
+ {
+     int ring_bytes = rx_burst_capacity_samples() * (int)sizeof(int16_t);
+     int n = 0;
++    const char *only = getenv("MERCURY_MONITOR_CONNECT_ONLY");
++    size_t count = (only && only[0] && strcmp(only, "0") != 0)
++                 ? MONITOR_CONNECT_MODES : MONITOR_MODE_COUNT;
+ 
+-    for (size_t i = 0; i < MONITOR_MODE_COUNT && n < max; i++)
++    for (size_t i = 0; i < count && n < max; i++)
+     {
+         int mode = monitor_modes[i];
+         const modem_backend_t *be = backend_for_mode(mode);
+diff --git i/modem/monitor_frame.c w/modem/monitor_frame.c
+index 7a7c4115..d3ae1c0e 100644
+--- i/modem/monitor_frame.c
++++ w/modem/monitor_frame.c
+@@ -80,8 +80,12 @@ void process_monitor_frame(const uint8_t *data, size_t nbytes_out,
+             /* An ACCEPT names neither callsign in full: both are CRCs. */
+             arq_accept_t acc;
+             if (arq_protocol_parse_accept(data, payload_nbytes, &acc) == 0)
+-                snprintf(detail, sizeof(detail), "BW=%d SID=%u START=%d%s",
++                snprintf(detail, sizeof(detail),
++                         "BW=%d SID=%u START=%d CALLER_CRC=%04X CALLED_CRC=%04X%s",
+                          acc.bw_hz, (unsigned)acc.session_id, acc.start_level,
++                         (unsigned)(data[ARQ_CONNECT_PAYLOAD_IDX] |
++                                    data[ARQ_CONNECT_PAYLOAD_IDX + 1] << 8),
++                         (unsigned)acc.called_crc,
+                          acc.tx_mfsk ? " MFSK-TX" : "");
+             else
+                 snprintf(detail, sizeof(detail), "unparseable");
+@@ -93,8 +97,11 @@ void process_monitor_frame(const uint8_t *data, size_t nbytes_out,
+             int bw = 0;
+             bool tx_mfsk = false;
+             if (arq_protocol_parse_call(data, payload_nbytes, &sid, src, &bw, &tx_mfsk) == 0)
+-                snprintf(detail, sizeof(detail), "FROM=%s BW=%d SID=%u%s",
+-                         src, bw, (unsigned)sid, tx_mfsk ? " MFSK-TX" : "");
++                snprintf(detail, sizeof(detail), "FROM=%s TO_CRC=%04X BW=%d SID=%u%s",
++                         src,
++                         (unsigned)(data[ARQ_CONNECT_PAYLOAD_IDX] |
++                                    data[ARQ_CONNECT_PAYLOAD_IDX + 1] << 8),
++                         bw, (unsigned)sid, tx_mfsk ? " MFSK-TX" : "");
+             else
+                 snprintf(detail, sizeof(detail), "FROM=?");
+         }

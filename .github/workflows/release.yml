@@ -1,0 +1,88 @@
+# Release builds for every Linux target (unsigned for now, maintainer decision 2026-11-25).
+#   headless tarballs: amd64, arm64, armv7, riscv64 (Ubuntu 22.04 base) + amd64/arm64 musl (Alpine)
+#   desktop packages:  .deb .rpm .AppImage for x86_64 and aarch64 (native runners)
+# Each job runs the unit tests and the recorded-exchange replay smoke test.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  headless:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux/amd64, base: ubuntu }
+          - { platform: linux/arm64, base: ubuntu }
+          - { platform: linux/arm/v7, base: ubuntu }
+          - { platform: linux/riscv64, base: ubuntu }
+          - { platform: linux/amd64, base: alpine }
+          - { platform: linux/arm64, base: alpine }
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - name: Build tarball
+        run: scripts/build-in-docker.sh ${{ matrix.platform }} ${{ matrix.base }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: headless-${{ matrix.base }}-${{ strategy.job-index }}
+          path: dist/*.tar.gz
+
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, ubuntu-22.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsoapysdr-dev libasound2-dev libpulse-dev \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev \
+            build-essential pkg-config file
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+      - name: Mercury + tests
+        run: |
+          scripts/build-mercury.sh https://github.com/Rhizomatica/mercury.git
+          cargo test --release
+      - name: Smoke test (recorded exchange through a monitor)
+        run: |
+          timeout 75 ./target/release/openrms-watch -c examples/replay-test.toml run > replay.log 2>&1 || true
+          grep -q "MONITOR DATAC16 ACCEPT" replay.log
+      - name: Build desktop packages
+        run: scripts/build-desktop.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.runner }}
+          path: |
+            desktop/target/release/bundle/deb/*.deb
+            desktop/target/release/bundle/rpm/*.rpm
+            desktop/target/release/bundle/appimage/*.AppImage
+
+  publish:
+    needs: [headless, desktop]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: out, merge-multiple: true }
+      - name: Tidy names and checksums
+        run: |
+          cd out
+          for f in *\ *; do [ -e "$f" ] && mv "$f" "$(echo "$f" | sed 's/openRMS Watch/openrms-watch-desktop/; s/ /-/g')"; done
+          sha256sum * > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          prerelease: true

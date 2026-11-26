@@ -1,0 +1,33 @@
+# End-to-end test: replay recorded Mercury exchanges instead of a live SDR.
+[watch]
+mercury = "../.build/mercury/mercury"
+db = "../.build/replay-test.db"
+listen = "127.0.0.1:8091"
+base_port = 9600
+runtime_dir = "../.build/run-replay"
+calls_file = "calls.example.txt"
+
+[[receiver]]
+id = "fixture"
+name = "Recorded fixture"
+kind = "file"
+location = "test"
+
+[[receiver]]
+id = "fixture-offset"
+name = "Same recording, receiver 150 Hz high"
+kind = "file"
+location = "test"
+offset_hz = -150      # corrects the +150 Hz error
+
+[[channel]]
+receiver = "fixture"
+dial_hz = 7101000
+label = "clean"
+file = "../tests/fixtures/q1test-q1rms10.s16"
+
+[[channel]]
+receiver = "fixture-offset"
+dial_hz = 7101000
+label = "+150 Hz receiver, corrected"
+file = "../tests/fixtures/q1test-q1rms10-plus150hz.s16"

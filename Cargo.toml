@@ -1,0 +1,28 @@
+[package]
+name = "openrms-watch"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+description = "Passive watcher that logs Mercury RMS connections heard on the air with an SDR"
+repository = "https://github.com/open-rms/openRMS-Watch"
+
+[dependencies]
+anyhow = "1.0.105"
+axum = "0.8.9"
+base64 = "0.23.1"
+clap = { version = "4.6.10", features = ["derive"] }
+libc = "0.2.191"
+num-complex = "0.4.6"
+rusqlite = { version = "0.43.0", features = ["bundled"] }
+rustfft = "6.4.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+sha2 = "0.11.2"
+soapysdr = "0.5.1"
+tokio = { version = "1.54.1", features = ["full"] }
+toml = "1.2.3"
+toml_edit = "0.25.21"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+ulid = "3.0.0"
+ureq = { version = "2", features = ["json"] }

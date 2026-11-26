@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>openRMS Watch: Mercury stations heard on air</title>
+<style>
+:root{
+  --bg:#f7f7f5;--panel:#fff;--ink:#1d1d1b;--muted:#6b6b66;--line:#e3e3de;--accent:#2457c5;
+  --ok:#1f7a3f;--ok-bg:#e3f3e8;--warn:#9a5b00;--warn-bg:#fbefd9;--bad:#a12a2a;--bad-bg:#f8e1e1;--na:#55555a;--na-bg:#ececef;
+  font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background:var(--bg)}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#141416;--panel:#1c1c1f;--ink:#e8e8e6;--muted:#9a9a96;--line:#2c2c30;--accent:#7aa2ff;
+  --ok:#7fd49b;--ok-bg:#183323;--warn:#f0bd6a;--warn-bg:#3a2c12;--bad:#f09a9a;--bad-bg:#3d1c1c;--na:#b4b4ba;--na-bg:#2a2a2f}}
+*{box-sizing:border-box}
+body{margin:0}
+header{padding:20px 24px 8px;max-width:1400px;margin:auto}
+h1{font-size:20px;margin:0 0 2px;font-weight:650;letter-spacing:-.01em}
+.sub{color:var(--muted);margin:0}
+main{max-width:1400px;margin:auto;padding:8px 24px 40px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:14px 0 18px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+.tile b{display:block;font-size:22px;font-weight:650;font-variant-numeric:tabular-nums}
+.tile span{color:var(--muted);font-size:12px}
+nav{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:12px;flex-wrap:wrap}
+nav button{background:none;border:0;padding:8px 14px;font:inherit;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+nav button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.filters input,.filters select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink)}
+.filters input[type=search]{min-width:220px}
+.filters label{color:var(--muted);font-size:12px;display:flex;gap:6px;align-items:center}
+.filters .grow{flex:1}
+.filters a{color:var(--accent);text-decoration:none;font-size:13px}
+.wrap{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:auto}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:top}
+th{font-size:12px;color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--panel);cursor:pointer;user-select:none}
+th.sorted::after{content:" ▾"}th.sorted.asc::after{content:" ▴"}
+tr:last-child td{border-bottom:0}
+td.num{text-align:right}
+.call{font-weight:600;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+.muted{color:var(--muted)}
+.badge{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600}
+.s-active{color:var(--ok);background:var(--ok-bg)}
+.s-stale,.s-gone{color:var(--bad);background:var(--bad-bg)}
+.s-unverified,.s-called-only{color:var(--warn);background:var(--warn-bg)}
+.c-inferred,.c-ambiguous,.c-unknown{color:var(--na);background:var(--na-bg)}
+.c-heard{color:var(--ok);background:var(--ok-bg)}
+.empty{padding:28px;text-align:center;color:var(--muted)}
+details.help{margin-top:18px;color:var(--muted)}
+details.help summary{cursor:pointer}
+details.help dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:10px 0}
+details.help dt{font-weight:600;color:var(--ink)}
+.raw{max-width:520px;overflow:hidden;text-overflow:ellipsis}
+.panel{display:none}
+.panel.on{display:block}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:12px}
+.card h2{font-size:14px;margin:0 0 10px;font-weight:650}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0}
+.row label{min-width:150px;color:var(--muted);font-size:13px}
+.row input[type=text],.row input[type=number],.row input[type=password],.row select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink)}
+.row input[type=text],.row select{min-width:280px}
+.bands{display:flex;flex-wrap:wrap;gap:6px}
+.bands label{min-width:0;border:1px solid var(--line);border-radius:999px;padding:3px 10px;cursor:pointer;color:var(--ink)}
+.bands input{margin:0 4px 0 0}
+.note{color:var(--muted);font-size:12.5px;margin:4px 0}
+.warn{color:var(--warn);background:var(--warn-bg);border-radius:7px;padding:6px 10px;font-size:13px;margin:6px 0}
+.ok{color:var(--ok);background:var(--ok-bg);border-radius:7px;padding:6px 10px;font-size:13px;margin:6px 0}
+.bad{color:var(--bad);background:var(--bad-bg);border-radius:7px;padding:6px 10px;font-size:13px;margin:6px 0}
+button.primary{font:inherit;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:8px 16px;cursor:pointer;font-weight:600}
+button.primary:disabled{opacity:.5}
+.meter{height:10px;border-radius:5px;background:var(--line);overflow:hidden;width:220px;display:inline-block;vertical-align:middle}
+.meter i{display:block;height:100%;background:var(--ok)}
+.decs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.dec{border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12.5px}
+.dec b{display:block;font-size:13px}
+canvas.spec{width:100%;height:110px;display:block;background:var(--bg);border-radius:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>openRMS Watch</h1>
+  <p class="sub">Mercury connections heard on the air: who called which RMS, on what frequency, and when each station was last heard.</p>
+</header>
+<main>
+  <div class="tiles" id="tiles"></div>
+  <nav role="tablist" id="tabs">
+    <button role="tab" data-tab="stations">RMS stations</button>
+    <button role="tab" data-tab="attempts">Connections</button>
+    <button role="tab" data-tab="frames">Raw frames</button>
+    <button role="tab" data-tab="channels">Channels &amp; receivers</button>
+    <button role="tab" data-tab="status">Status</button>
+    <button role="tab" data-tab="settings">Settings</button>
+  </nav>
+  <div class="filters" id="filters">
+    <input type="search" id="q" placeholder="Callsign, CRC or frequency" aria-label="Search">
+    <label data-for="stations attempts frames">Band <select id="band"><option value="">all</option></select></label>
+    <label data-for="stations">Status <select id="status">
+      <option value="">all</option><option>active</option><option>stale</option><option>gone</option>
+      <option>unverified</option><option>called-only</option></select></label>
+    <label data-for="stations attempts frames">Receiver <select id="receiver"><option value="">all</option></select></label>
+    <label data-for="attempts">Answered <select id="accepted"><option value="">all</option><option value="yes">yes</option><option value="no">no</option></select></label>
+    <label data-for="frames">Kind <select id="kind"><option value="">all</option>
+      <option>CALL</option><option>ACCEPT</option><option>DISCONNECT</option><option>CQ</option><option>STATION</option>
+      <option>BCAST_CTRL</option><option>BCAST_DATA</option><option>CONTROL</option><option>DATA</option></select></label>
+    <label data-for="attempts frames">Since <select id="since_h">
+      <option value="1">1 hour</option><option value="6">6 hours</option><option value="24">24 hours</option>
+      <option value="168">7 days</option><option value="720">30 days</option><option value="0">all time</option></select></label>
+    <span class="grow"></span>
+    <a id="csv" href="#">Download CSV</a>
+  </div>
+  <div class="wrap" id="tablewrap"><table id="tbl"><thead></thead><tbody></tbody></table></div>
+
+  <section class="panel" id="status-panel">
+    <div class="grid2">
+      <div class="card"><h2>Radio</h2><div id="st-radio" class="note">Waiting for the engine…</div></div>
+      <div class="card"><h2>Contributing</h2><div id="st-contrib" class="note"></div></div>
+    </div>
+    <div class="card"><h2>Decoders</h2><div class="decs" id="st-decs"></div>
+      <p class="note">A decoder is pointed at each Mercury-shaped burst the scan finds. <b>Listening</b>: waiting to decode. <b>Confirmed</b>: Mercury decoded here. <b>Pinned</b>: the RMS itself was heard, so this frequency is kept.</p></div>
+    <div class="card"><h2>Spectrum</h2><div id="st-spec"></div>
+      <p class="note">Blue: signal (smoothed). Grey: local noise floor. Dashed: detection threshold. If the whole trace sits on the floor with no bumps, the antenna isn't bringing in signals.</p></div>
+  </section>
+
+  <section class="panel" id="settings-panel">
+    <div id="set-msg"></div>
+    <div class="card"><h2>Radio</h2>
+      <div class="row"><label>SDR</label><select id="s-device"></select> <button id="s-rescan" type="button">Rescan</button></div>
+      <div id="s-devnotes"></div>
+      <div class="row"><label>Bands to watch</label><div class="bands" id="s-bands"></div></div>
+      <div id="s-plan"></div>
+      <div class="row"><label>Gain</label><div id="s-gains"></div></div>
+      <div class="row"><label>Frequency error (ppm)</label><input type="number" step="0.01" id="s-ppm"> <span class="note">positive if signals read low. Measure with <code>scripts/atsc_cal.py</code>.</span></div>
+      <div class="row"><label>Upconverter offset (Hz)</label><input type="number" step="1" id="s-upconv"> <span class="note">e.g. 125000000 for a Ham It Up; 0 if none</span></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><h2>Station</h2>
+        <div class="row"><label>Receiver name</label><input type="text" id="s-name"></div>
+        <div class="row"><label>Grid square</label><input type="text" id="s-loc" maxlength="8"></div>
+      </div>
+      <div class="card"><h2>Decoding</h2>
+        <div class="row"><label>Decoders</label><input type="number" min="1" max="64" id="s-dec"> <span class="note" id="s-cpu"></span></div>
+        <div class="row"><label>Stale after (hours)</label><input type="number" min="1" id="s-stale"></div>
+        <div class="row"><label>Gone after (days)</label><input type="number" min="1" id="s-gone"></div>
+      </div>
+    </div>
+    <div class="card"><h2>Contribute to openRMS</h2>
+      <p class="note">Off: everything stays on this computer. On: what this watcher hears is also sent to the openRMS site (live feed, "heard on air" on gateway pages, contributor list). Create a watcher under <i>Dashboard → Watchers</i> on the site and paste its key here.</p>
+      <div class="row"><label>Directory URL</label><input type="text" id="s-dir" placeholder="https://directory.openrms.dev"> <span class="note">also used to name stations, even when not contributing</span></div>
+      <div class="row"><label>Accounts URL</label><input type="text" id="s-acc" placeholder="https://auth.openrms.dev"> <span class="note">where "Link to openRMS" signs in; leave empty for the default</span></div>
+      <div class="row"><label>Contribute</label><input type="checkbox" id="s-contrib"></div>
+      <div class="row"><label>Link this watcher</label><button id="s-link" type="button">Link to openRMS</button> <span class="note">opens the site, you approve, and the key is filled in for you</span></div>
+      <div id="s-linkbox"></div>
+      <div class="row"><label>Or paste a watcher key</label><input type="password" id="s-token" placeholder="ormsw_…" autocomplete="off"> <span class="note" id="s-tokstate"></span></div>
+    </div>
+    <div class="card"><h2>Web page</h2>
+      <div class="row"><label>Port</label><input type="number" min="1024" max="65535" id="s-port"></div>
+      <div class="row"><label>Allow other computers</label><input type="checkbox" id="s-lan"> <span class="note">needs a password</span></div>
+      <div class="row"><label>Password</label><input type="password" id="s-pw" autocomplete="new-password" placeholder="leave empty to keep"> <span class="note" id="s-pwstate"></span></div>
+    </div>
+    <div class="row"><button class="primary" id="s-save" type="button">Save and restart</button></div>
+  </section>
+
+  <details class="help">
+    <summary>How to read this</summary>
+    <dl>
+      <dt>RMS identity</dt><dd>A Mercury CALL carries the caller's callsign in clear, but only a 16-bit CRC of the station being called. The ACCEPT the RMS sends back carries only CRCs. Stations are keyed by that CRC.</dd>
+      <dt>heard</dt><dd>The callsign was received in clear (a CQ frame).</dd>
+      <dt>inferred</dt><dd>Exactly one known callsign has this CRC. Likely, but not proven: a CRC16 can collide.</dd>
+      <dt>ambiguous / unknown</dt><dd>Several, or no, known callsigns match the CRC.</dd>
+      <dt>active</dt><dd>The station itself transmitted (ACCEPT or CQ) within the stale window.</dd>
+      <dt>stale / gone</dt><dd>Not heard for longer than the stale window (or the gone window), <em>while we were listening</em> on its channels for at least that long.</dd>
+      <dt>unverified</dt><dd>Not heard recently, but we haven't listened long enough on its channels to call it stale.</dd>
+      <dt>called-only</dt><dd>Clients called this CRC but the station was never heard answering. It may be out of our receive range, or off the air.</dd>
+    </dl>
+  </details>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const state = {tab:"stations", sort:{}, summary:null};
+const F = ["q","band","status","receiver","accepted","kind","since_h"];
+
+function ago(ms){
+  if(!ms) return "—";
+  const s = (Date.now()-ms)/1000;
+  if(s<60) return Math.max(0,Math.round(s))+"s ago";
+  if(s<3600) return Math.round(s/60)+"m ago";
+  if(s<172800) return Math.round(s/3600)+"h ago";
+  return Math.round(s/86400)+"d ago";
+}
+const utc = ms => ms ? new Date(ms).toISOString().replace("T"," ").slice(0,19)+"Z" : "";
+const khz = hz => hz ? (hz/1000).toLocaleString(undefined,{minimumFractionDigits:1,maximumFractionDigits:1}) : "";
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const t = ms => `<span title="${utc(ms)}">${ago(ms)}</span>`;
+const snr = v => v==null ? "" : v.toFixed(1);
+
+const COLS = {
+  stations: [
+    ["Station", s => s.callsign ? `<span class="call">${esc(s.callsign)}</span>` :
+        (s.candidates.length ? `<span class="muted">${esc(s.candidates.join(" / "))}</span>` : `<span class="muted">?</span>`),
+      s => s.callsign || s.candidates[0] || "~"],
+    ["Name", s => `<span class="badge c-${s.name_confidence}">${s.name_confidence}</span>`, s => s.name_confidence],
+    ["CRC", s => `<span class="mono">${s.crc}</span>`, s => s.crc],
+    ["Status", s => `<span class="badge s-${s.status}">${s.status}</span>`, s => s.status],
+    ["Last heard", s => t(s.last_heard_ms), s => s.last_heard_ms||0],
+    ["Last called", s => t(s.last_called_ms), s => s.last_called_ms||0],
+    ["Channels (kHz)", s => s.channels.map(khz).join(", "), s => s.channels[0]||0],
+    ["Bands", s => s.bands.join(" "), s => s.bands.join(" ")],
+    ["Answered", s => `${s.accepted}/${s.attempts}`, s => s.accepted, "num"],
+    ["Clients", s => s.clients, s => s.clients, "num"],
+    ["CQ", s => s.cq || "", s => s.cq, "num"],
+    ["Best SNR", s => snr(s.best_snr), s => s.best_snr ?? -99, "num"],
+    ["Listened since", s => s.last_heard_ms ? s.listened_h_since+" h" : "", s => s.listened_h_since, "num"],
+    ["Receivers", s => esc(s.receivers.join(", ")), s => s.receivers.join(",")],
+    ["First seen", s => t(s.first_ms), s => s.first_ms],
+  ],
+  attempts: [
+    ["Time", a => t(a.first_ms), a => a.first_ms],
+    ["kHz", a => khz(a.dial_hz), a => a.dial_hz, "num"],
+    ["Band", a => a.band, a => a.band],
+    ["Client", a => a.client_call ? `<span class="call">${esc(a.client_call)}</span>` : `<span class="mono muted">${a.client_crc||"?"}</span>`, a => a.client_call||"~"],
+    ["RMS", a => a.rms_call ? `<span class="call">${esc(a.rms_call)}</span>` :
+        (a.rms_candidates.length ? `<span class="muted">${esc(a.rms_candidates.join(" / "))}</span>` : `<span class="muted">?</span>`), a => a.rms_call||"~"],
+    ["RMS CRC", a => `<span class="mono">${a.rms_crc||""}</span>`, a => a.rms_crc||""],
+    ["Answered", a => a.accepted ? `<span class="badge s-active">yes</span>` : `<span class="badge s-unverified">no</span>`, a => a.accepted?1:0],
+    ["Calls", a => a.n_call, a => a.n_call, "num"],
+    ["Duration", a => a.disconnect_ms ? Math.round((a.disconnect_ms-a.first_ms)/1000)+" s" : "", a => a.disconnect_ms ? a.disconnect_ms-a.first_ms : 0, "num"],
+    ["SNR call", a => snr(a.snr_call), a => a.snr_call ?? -99, "num"],
+    ["SNR answer", a => snr(a.snr_accept), a => a.snr_accept ?? -99, "num"],
+    ["BW", a => a.bw||"", a => a.bw||0, "num"],
+    ["Receivers", a => esc(a.receivers.join(", ")), a => a.receivers.join(",")],
+  ],
+  frames: [
+    ["Time", f => `<span title="${utc(f.ts_ms)}">${utc(f.ts_ms).slice(5)}</span>`, f => f.ts_ms],
+    ["kHz", f => khz(f.dial_hz), f => f.dial_hz, "num"],
+    ["Receiver", f => esc(f.receiver_id), f => f.receiver_id],
+    ["Mode", f => esc(f.mode), f => f.mode],
+    ["Kind", f => esc(f.kind), f => f.kind],
+    ["From", f => f.from_call ? `<span class="call">${esc(f.from_call)}</span>` : "", f => f.from_call||""],
+    ["To CRC", f => `<span class="mono">${f.to_crc||f.called_crc||""}</span>`, f => f.to_crc||f.called_crc||""],
+    ["SID", f => f.sid ?? "", f => f.sid ?? -1, "num"],
+    ["SNR", f => snr(f.snr), f => f.snr ?? -99, "num"],
+    ["Shift", f => f.shift_hz ? (f.shift_hz>0?"+":"")+f.shift_hz+" Hz" : "", f => f.shift_hz||0, "num"],
+    ["Raw", f => `<span class="mono muted raw" title="${esc(f.raw)}">${esc(f.raw)}</span>`, f => f.raw],
+  ],
+  channels: [
+    ["kHz", c => khz(c.dial_hz), c => c.dial_hz, "num"],
+    ["Band", c => esc(c.band), c => c.band],
+    ["Label", c => esc(c.label), c => c.label],
+    ["Receiver", c => `<span class="call">${esc(c.receiver_id)}</span> <span class="muted">${esc(c.receiver_name||"")}</span>`, c => c.receiver_id],
+    ["Kind", c => esc(c.receiver_kind), c => c.receiver_kind],
+    ["Location", c => esc(c.location), c => c.location],
+    ["Listened (24 h)", c => c.listened_h_24+" h", c => c.listened_h_24, "num"],
+    ["Audio last seen", c => t(c.last_coverage_ms), c => c.last_coverage_ms||0],
+    ["Frames (24 h)", c => c.frames_24, c => c.frames_24, "num"],
+    ["Last frame", c => t(c.last_frame_ms), c => c.last_frame_ms||0],
+  ],
+};
+
+function params(){
+  const p = new URLSearchParams();
+  for(const k of F){
+    const lab = $("#"+k).closest("label");
+    if(lab && !lab.dataset.for.split(" ").includes(state.tab)) continue;
+    const v = $("#"+k).value;
+    if(v !== "") p.set(k, v);
+  }
+  return p;
+}
+
+function saveHash(){
+  const p = params(); p.set("tab", state.tab);
+  history.replaceState(null, "", "#"+p.toString());
+}
+function loadHash(){
+  const p = new URLSearchParams(location.hash.slice(1));
+  if(p.get("tab") && (COLS[p.get("tab")] || PANELS.includes(p.get("tab")))) state.tab = p.get("tab");
+  for(const k of F) if(p.has(k)) $("#"+k).value = p.get(k);
+  if(!p.has("since_h")) $("#since_h").value = "24";
+}
+
+async function loadSummary(){
+  const s = await (await fetch("api/summary")).json();
+  state.summary = s;
+  const tiles = [
+    [s.active, "active RMS"], [s.stale, "stale or gone"], [s.unverified, "unverified"],
+    [s.attempts_24h, "connections, 24 h"], [s.frames_24h, "frames, 24 h"],
+    [s.last_frame_ms ? ago(s.last_frame_ms) : "never", "last frame"], [s.known_calls, "known callsigns"],
+  ];
+  $("#tiles").innerHTML = tiles.map(([v,l]) => `<div class="tile"><b>${v}</b><span>${l}</span></div>`).join("");
+  for(const [id, list] of [["band", s.bands], ["receiver", s.receivers]]){
+    const sel = $("#"+id), cur = sel.value;
+    sel.innerHTML = `<option value="">all</option>` + list.map(x => `<option>${esc(x)}</option>`).join("");
+    sel.value = cur;
+  }
+}
+
+const PANELS = ["status", "settings"];
+function showPanels(){
+  const isPanel = PANELS.includes(state.tab);
+  for(const b of document.querySelectorAll("#tabs button")) b.setAttribute("aria-selected", b.dataset.tab===state.tab);
+  $("#filters").style.display = isPanel ? "none" : "";
+  $("#tablewrap").style.display = isPanel ? "none" : "";
+  $("#status-panel").classList.toggle("on", state.tab==="status");
+  $("#settings-panel").classList.toggle("on", state.tab==="settings");
+  return isPanel;
+}
+
+async function loadTable(){
+  if(showPanels()){
+    const p = new URLSearchParams(); p.set("tab", state.tab); history.replaceState(null, "", "#"+p.toString());
+    if(state.tab==="status") loadStatus();
+    if(state.tab==="settings" && !state.settingsLoaded) loadSettings();
+    return;
+  }
+  for(const b of document.querySelectorAll("#tabs button")) b.setAttribute("aria-selected", b.dataset.tab===state.tab);
+  for(const l of document.querySelectorAll("#filters label")) l.style.display = l.dataset.for.split(" ").includes(state.tab) ? "" : "none";
+  const p = params();
+  saveHash();
+  $("#csv").href = `api/${state.tab}?${p.toString()}&format=csv`;
+  const rows = await (await fetch(`api/${state.tab}?${p.toString()}`)).json();
+  const cols = COLS[state.tab];
+  const so = state.sort[state.tab];
+  if(so){
+    const key = cols[so.i][2];
+    rows.sort((a,b) => { const x=key(a), y=key(b); return (x<y?-1:x>y?1:0) * (so.asc?1:-1); });
+  }
+  $("#tbl thead").innerHTML = "<tr>" + cols.map((c,i) =>
+    `<th data-i="${i}" class="${c[3]||""} ${so&&so.i===i?"sorted"+(so.asc?" asc":""):""}">${c[0]}</th>`).join("") + "</tr>";
+  $("#tbl tbody").innerHTML = rows.length
+    ? rows.map(r => "<tr>" + cols.map(c => `<td class="${c[3]||""}">${c[1](r)}</td>`).join("") + "</tr>").join("")
+    : `<tr><td colspan="${cols.length}" class="empty">Nothing matches these filters yet.</td></tr>`;
+}
+
+async function refresh(){ try { await loadSummary(); await loadTable(); } catch(e){ console.error(e); } }
+
+$("#tabs").addEventListener("click", e => { const b = e.target.closest("button"); if(b){ state.tab = b.dataset.tab; loadTable(); } });
+$("#tbl thead").addEventListener("click", e => {
+  const th = e.target.closest("th"); if(!th) return;
+  const i = +th.dataset.i, cur = state.sort[state.tab];
+  state.sort[state.tab] = {i, asc: cur && cur.i===i ? !cur.asc : false};
+  loadTable();
+});
+let deb;
+$("#q").addEventListener("input", () => { clearTimeout(deb); deb = setTimeout(loadTable, 250); });
+for(const k of F.slice(1)) $("#"+k).addEventListener("change", loadTable);
+
+loadHash();
+refresh();
+setInterval(refresh, 30000);
+setInterval(() => { if(state.tab==="status") loadStatus(); }, 2000);
+
+// ---------------------------------------------------------------- status
+const fmtHz = hz => (hz/1e3).toLocaleString(undefined,{minimumFractionDigits:1,maximumFractionDigits:1})+" kHz";
+async function loadStatus(){
+  let d; try { d = await (await fetch("api/live")).json(); } catch(e){ return; }
+  const eng = d.engine;
+  const rx = Object.entries(eng.receivers);
+  $("#st-radio").innerHTML = rx.length ? rx.map(([id,r]) => {
+    const clip = r.clip_pct, w = Math.min(100, Math.max(0, (r.rms_dbfs+60)/60*100));
+    const verdict = r.error ? `<div class="bad">${esc(r.error)}</div>` :
+      clip > 0.5 ? `<div class="bad">Clipping ${clip.toFixed(2)}%: lower the gain.</div>` :
+      r.rms_dbfs > -12 ? `<div class="warn">Close to full scale (${r.rms_dbfs.toFixed(1)} dBFS): strong stations may overload the SDR and hide weak signals. Lower the gain, or add a band-pass or broadcast-band filter.</div>` :
+      r.rms_dbfs < -45 ? `<div class="warn">Very low level: raise the gain or check the antenna.</div>` :
+      `<div class="ok">Levels look fine.</div>`;
+    return `<div class="row"><b class="call">${esc(id)}</b> <span class="muted">${r.msps} MS/s</span></div>
+      <div class="row">Level <span class="meter"><i style="width:${w}%"></i></span> ${r.rms_dbfs.toFixed(1)} dBFS · clipped ${clip.toFixed(3)}%</div>${verdict}`;
+  }).join("") : "No SDR running (only fixed channels, or not started).";
+  const c = d.contribute;
+  $("#st-contrib").innerHTML = (c.enabled
+      ? (c.error ? `<div class="bad">${esc(c.error)}</div>` : `<div class="ok">Contributing. Last upload ${c.lastOkMs ? ago(c.lastOkMs) : "pending"}.</div>`)
+        + `<div class="note">${c.queue} waiting · ${c.sent24h} sent in 24 h</div>`
+      : `<div class="note">Off: everything stays on this computer.</div>`)
+    + `<div class="note">${c.directoryCallsigns} callsigns from the Directory${c.callsignsUpdatedMs ? ", updated "+ago(c.callsignsUpdatedMs) : ""}.</div>
+       <div class="note">${esc(d.version)} · running ${ago(eng.started_ms).replace(" ago","")}</div>`;
+  $("#st-decs").innerHTML = eng.decoders.length ? eng.decoders.map(x =>
+    `<div class="dec"><b>Decoder ${x.idx}</b><span class="badge ${x.state==="pinned"||x.state==="confirmed" ? "s-active" : x.state==="listening" ? "s-unverified" : "c-unknown"}">${x.state}</span>
+     ${x.dial_hz ? `<div class="mono">${fmtHz(x.dial_hz)}</div>` : ""}</div>`).join("") : `<span class="note">No scanning decoders.</span>`;
+  const box = $("#st-spec");
+  if(box.children.length !== eng.segments.length){
+    box.innerHTML = eng.segments.map((sg,i) => `<div class="note">${esc(sg.receiver)} · ${fmtHz(sg.lo_hz)} – ${fmtHz(sg.hi_hz)}</div><canvas class="spec" id="spec${i}"></canvas>`).join("");
+  }
+  eng.segments.forEach((sg,i) => drawSpec($("#spec"+i), sg));
+}
+function drawSpec(cv, sg){
+  if(!cv || !sg.db.length) return;
+  const dpr = window.devicePixelRatio||1, W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W*dpr; cv.height = H*dpr; const g = cv.getContext("2d"); g.scale(dpr,dpr);
+  const all = sg.db.concat(sg.floor), lo = Math.min(...sg.floor) - 3, hi = Math.max(Math.max(...sg.db), Math.max(...sg.floor)+sg.threshold_db+6);
+  const y = v => H - (v-lo)/(hi-lo)*H, x = i => i/(sg.db.length-1)*W;
+  const css = getComputedStyle(document.documentElement);
+  const line = (arr, color, dash, off=0) => { g.beginPath(); g.setLineDash(dash); g.strokeStyle = color; g.lineWidth = 1;
+    arr.forEach((v,i) => i ? g.lineTo(x(i), y(v+off)) : g.moveTo(x(i), y(v+off))); g.stroke(); };
+  line(sg.floor, css.getPropertyValue("--muted"), []);
+  line(sg.floor, css.getPropertyValue("--warn"), [4,4], sg.threshold_db);
+  line(sg.db, css.getPropertyValue("--accent"), []);
+}
+
+// ---------------------------------------------------------------- settings
+const BANDS = ["160m","80m","60m","40m","30m","20m","17m","15m","12m","10m","6m"];
+let SET = null, DEVS = [];
+function msg(kind, text){ $("#set-msg").innerHTML = text ? `<div class="${kind}">${esc(text)}</div>` : ""; }
+async function loadDevices(){
+  $("#s-device").innerHTML = `<option>Looking for SDRs…</option>`;
+  try { DEVS = await (await fetch("api/devices")).json(); } catch(e){ DEVS = []; }
+  const cur = SET && SET.radio.device;
+  const opts = DEVS.map(d => `<option value="${esc(d.device.args)}">${esc(d.device.label)}</option>`);
+  if(cur && !DEVS.some(d => d.device.args===cur)) opts.unshift(`<option value="${esc(cur)}">${esc(cur)} (not found)</option>`);
+  $("#s-device").innerHTML = opts.length ? opts.join("") : `<option value="">No SDR found</option>`;
+  if(cur) $("#s-device").value = cur;
+  devChanged(false);
+}
+function devCaps(){ const d = DEVS.find(d => d.device.args === $("#s-device").value); return d && d.caps; }
+function devChanged(resetGains){
+  const caps = devCaps();
+  $("#s-devnotes").innerHTML = caps ? caps.notes.map(n => `<div class="warn">${esc(n)}</div>`).join("") : "";
+  const g = $("#s-gains");
+  if(!caps){ g.innerHTML = `<span class="note">Gain options appear once the SDR is found.</span>`; replan(); return; }
+  g.innerHTML = caps.gains.map(st => {
+    const v = resetGains ? Math.round((st.min+st.max)/2/(st.step||1))*(st.step||1) : (SET.radio.gains[st.name] ?? st.min);
+    return `<div class="row"><label style="min-width:60px">${esc(st.name)}</label>
+      <input type="range" min="${st.min}" max="${st.max}" step="${st.step||1}" value="${v}" data-gain="${esc(st.name)}">
+      <span class="mono" data-gv="${esc(st.name)}">${v}</span> dB</div>`;
+  }).join("");
+  g.querySelectorAll("input[type=range]").forEach(r => r.addEventListener("input", () => { g.querySelector(`[data-gv="${r.dataset.gain}"]`).textContent = r.value; }));
+  replan();
+}
+function collect(){
+  const s = structuredClone(SET);
+  s.radio.device = $("#s-device").value;
+  s.radio.bands = [...document.querySelectorAll("#s-bands input:checked")].map(i => i.value);
+  s.radio.gains = {}; document.querySelectorAll("#s-gains input[type=range]").forEach(r => s.radio.gains[r.dataset.gain] = +r.value);
+  s.radio.gain = null;
+  s.radio.ppm = +$("#s-ppm").value || 0;
+  s.radio.upconverterHz = +$("#s-upconv").value || 0;
+  s.station.name = $("#s-name").value; s.station.location = $("#s-loc").value.trim();
+  s.decoding.decoders = +$("#s-dec").value || 8;
+  s.decoding.staleHours = +$("#s-stale").value || 24; s.decoding.goneDays = +$("#s-gone").value || 7;
+  s.directory.url = $("#s-dir").value.trim();
+  s.directory.accountsUrl = $("#s-acc").value.trim();
+  s.contribute.enabled = $("#s-contrib").checked;
+  const tok = $("#s-token").value.trim(); s.contribute.token = tok ? tok : null;
+  s.web.port = +$("#s-port").value || 17373; s.web.lan = $("#s-lan").checked;
+  const pw = $("#s-pw").value; s.web.password = pw ? pw : null;
+  return s;
+}
+let planT;
+function replan(){
+  clearTimeout(planT);
+  planT = setTimeout(async () => {
+    const s = collect();
+    if(!s.radio.device){ $("#s-plan").innerHTML = ""; return; }
+    const r = await (await fetch("api/plan", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify(s)})).json();
+    $("#s-plan").innerHTML = r.ok
+      ? `<div class="ok">Will capture ${(r.plan.rate/1e6).toFixed(1)} MS/s centred on ${(r.plan.center_hz/1e6).toFixed(3)} MHz, covering ${s.radio.bands.join(", ")}.</div>`
+      : `<div class="bad">${esc(r.error)}</div>`;
+    $("#s-cpu").textContent = r.ok ? `about ${r.plan.cores} CPU cores in total` : "";
+  }, 250);
+}
+async function loadSettings(){
+  const r = await fetch("api/settings");
+  if(!r.ok){ msg("bad", await r.text()); return; }
+  SET = await r.json(); state.settingsLoaded = true;
+  if(SET.advancedConfig) msg("warn", "Your watch.toml has parts this page can't edit (several SDRs, fixed channels or a command source). Saving here sets up one SDR scanning the chosen bands and keeps the rest of the file.");
+  $("#s-bands").innerHTML = BANDS.map(b => `<label><input type="checkbox" value="${b}" ${SET.radio.bands.includes(b) ? "checked" : ""}>${b}</label>`).join("");
+  $("#s-ppm").value = SET.radio.ppm; $("#s-upconv").value = SET.radio.upconverterHz;
+  $("#s-name").value = SET.station.name; $("#s-loc").value = SET.station.location;
+  $("#s-dec").value = SET.decoding.decoders; $("#s-stale").value = SET.decoding.staleHours; $("#s-gone").value = SET.decoding.goneDays;
+  $("#s-dir").value = SET.directory.url; $("#s-acc").value = SET.directory.accountsUrl || ""; $("#s-contrib").checked = SET.contribute.enabled;
+  $("#s-tokstate").textContent = SET.contribute.tokenSet ? "a key is saved; paste a new one to replace it" : "no key saved";
+  $("#s-port").value = SET.web.port; $("#s-lan").checked = SET.web.lan;
+  $("#s-pwstate").textContent = SET.web.passwordSet ? "a password is set" : "no password";
+  await loadDevices();
+}
+let linkT;
+async function linkPoll(){
+  const l = await (await fetch("api/link")).json();
+  const box = $("#s-linkbox");
+  if(l.status === "pending"){
+    const url = l.verificationUriComplete || l.verificationUri;
+    box.innerHTML = `<div class="ok">On the openRMS site, approve code <b class="mono" style="font-size:16px">${esc((l.userCode||"").replace(/(.{4})(?=.)/g, "$1-"))}</b>
+      at <a href="${esc(url)}" target="_blank" rel="noopener">${esc(l.verificationUri)}</a>. Waiting for approval…</div>`;
+    linkT = setTimeout(linkPoll, 2000);
+  } else if(l.status === "choose"){
+    if(box.dataset.state === "choose") return;   // don't wipe what the user is typing
+    box.dataset.state = "choose";
+    const opts = l.watchers.map((w,i) => `<label class="row" style="gap:6px"><input type="radio" name="lw" value="${esc(w.id)}" ${i===0?"checked":""}>
+        <b>${esc(w.name)}</b> <span class="muted">${esc(w.gridsquare||"")}${w.hasKey ? " · replaces its current key" : ""}</span></label>`).join("");
+    box.innerHTML = `<div class="ok">Approved. Which watcher is this?</div>${opts}
+      <label class="row" style="gap:6px"><input type="radio" name="lw" value="" ${l.watchers.length?"":"checked"}> New watcher:
+        <input type="text" id="lw-name" placeholder="name, e.g. shack-hackrf" value="${esc($("#s-name").value || "")}">
+        <input type="text" id="lw-grid" placeholder="grid" maxlength="6" style="width:80px" value="${esc(($("#s-loc").value||"").slice(0,6))}"></label>
+      <div class="row"><button class="primary" id="lw-go" type="button">Use this watcher</button></div>`;
+    $("#lw-go").addEventListener("click", async () => {
+      const pick = document.querySelector('input[name=lw]:checked');
+      const body = pick && pick.value ? {watcherId: pick.value} : {name: $("#lw-name").value, gridsquare: $("#lw-grid").value};
+      const r = await fetch("api/link/finish", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify(body)});
+      if(!r.ok){ box.insertAdjacentHTML("beforeend", `<div class="bad">${esc(await r.text())}</div>`); return; }
+      box.dataset.state = ""; linkPoll();
+    });
+  } else if(l.status === "done"){
+    box.innerHTML = `<div class="ok">Linked as watcher “${esc(l.watcher)}”. Contributing is on; the watcher is restarting.</div>`;
+    setTimeout(() => location.reload(), 6000);
+  } else if(l.status === "error"){
+    box.innerHTML = `<div class="bad">${esc(l.error)}</div>`;
+  }
+}
+$("#s-link").addEventListener("click", async () => {
+  clearTimeout(linkT);
+  $("#s-linkbox").dataset.state = "";
+  const r = await fetch("api/link", {method:"POST"});
+  if(!r.ok){ $("#s-linkbox").innerHTML = `<div class="bad">${esc(await r.text())}</div>`; return; }
+  const l = await r.json();
+  const url = l.verificationUriComplete || l.verificationUri;
+  if(url) window.open(url, "_blank", "noopener");
+  linkPoll();
+});
+$("#s-device").addEventListener("change", () => devChanged(true));
+$("#s-rescan").addEventListener("click", loadDevices);
+$("#s-bands").addEventListener("change", replan);
+["#s-dec","#s-upconv"].forEach(id => $(id).addEventListener("input", replan));
+$("#s-save").addEventListener("click", async () => {
+  const s = collect();
+  $("#s-save").disabled = true; msg("note", "Saving…");
+  const r = await fetch("api/settings", {method:"PUT", headers:{"content-type":"application/json"}, body: JSON.stringify(s)});
+  if(!r.ok){ msg("bad", await r.text()); $("#s-save").disabled = false; return; }
+  msg("ok", "Saved. Restarting the watcher…");
+  const port = s.web.port, here = location.port || (location.protocol==="https:" ? "443" : "80");
+  const base = String(port) === here ? "" : `${location.protocol}//${location.hostname}:${port}/`;
+  for(let i=0;i<60;i++){
+    await new Promise(res => setTimeout(res, 1000));
+    try { const t = await fetch(base + "api/live", {cache:"no-store"}); if(t.ok){ location.href = base + "#tab=status"; if(!base) location.reload(); return; } } catch(e){}
+  }
+  msg("warn", "The watcher hasn't come back yet. Check its log.");
+});
+</script>
+</body>
+</html>

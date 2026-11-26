@@ -1,0 +1,27 @@
+[Unit]
+Description=openRMS Watch (passive Mercury RMS monitor)
+Documentation=https://github.com/openrms/openRMS-Watch
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=openrms-watch
+Group=openrms-watch
+# USB SDRs: distro udev rules usually grant plugdev
+SupplementaryGroups=plugdev
+StateDirectory=openrms-watch
+WorkingDirectory=/var/lib/openrms-watch
+ExecStart=@BINDIR@/openrms-watch -c /var/lib/openrms-watch/watch.toml run
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/openrms-watch
+RuntimeDirectory=openrms-watch
+Environment=XDG_RUNTIME_DIR=/run/openrms-watch
+
+[Install]
+WantedBy=multi-user.target
