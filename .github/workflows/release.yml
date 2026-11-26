@@ -56,9 +56,11 @@ jobs:
         run: |
           scripts/build-mercury.sh https://github.com/Rhizomatica/mercury.git
           cargo test --release
+          cargo build --release
       - name: Smoke test (recorded exchange through a monitor)
         run: |
           timeout 75 ./target/release/openrms-watch -c examples/replay-test.toml run > replay.log 2>&1 || true
+          cat replay.log
           grep -q "MONITOR DATAC16 ACCEPT" replay.log
       - name: Build desktop packages
         run: scripts/build-desktop.sh

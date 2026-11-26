@@ -22,8 +22,11 @@ jobs:
         run: scripts/build-mercury.sh https://github.com/Rhizomatica/mercury.git
       - name: Unit tests
         run: cargo test --release
+      - name: Build
+        run: cargo build --release
       - name: Smoke test
         run: |
           timeout 75 ./target/release/openrms-watch -c examples/replay-test.toml run > replay.log 2>&1 || true
-          grep -E "MONITOR DATAC16 (CALL|ACCEPT|DISCONNECT)" replay.log
+          cat replay.log
+          grep -q "MONITOR DATAC16 CALL" replay.log
           grep -q "MONITOR DATAC16 ACCEPT" replay.log
