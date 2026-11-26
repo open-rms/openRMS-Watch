@@ -6,4 +6,7 @@ RUN apk add --no-cache build-base pkgconf curl git bash \
       soapy-sdr-dev alsa-lib-dev pulseaudio-dev linux-headers
 RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
 ENV PATH=/root/.cargo/bin:$PATH
+# link dynamically: musl Rust defaults to static, and SoapySDR has to be a
+# shared library to load its driver modules
+ENV RUSTFLAGS="-C target-feature=-crt-static"
 WORKDIR /src
