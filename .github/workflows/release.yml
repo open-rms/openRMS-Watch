@@ -82,12 +82,15 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with: { path: out, merge-multiple: true }
-      - name: Tidy names and checksums
+      - name: Flatten, tidy names, checksums
         run: |
-          cd out
-          for f in *\ *; do [ -e "$f" ] && mv "$f" "$(echo "$f" | sed 's/openRMS Watch/openrms-watch-desktop/; s/ /-/g')"; done
-          sha256sum * > SHA256SUMS
+          # desktop artifacts arrive in deb/ rpm/ appimage/ folders; release files are flat
+          mkdir rel
+          find out -type f -print0 | while IFS= read -r -d '' f; do
+            cp "$f" "rel/$(basename "$f" | sed 's/openRMS Watch/openrms-watch-desktop/; s/ /-/g')"
+          done
+          cd rel && sha256sum * > SHA256SUMS && ls -la
       - uses: softprops/action-gh-release@v2
         with:
-          files: out/*
+          files: rel/*
           prerelease: true
