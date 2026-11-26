@@ -85,7 +85,8 @@ watcher picks the sample rate and centre frequency itself and says if the bands 
 openRMS-Accounts (`accounts_url`, default `https://auth.openrms.dev`), you approve it on the
 site, pick or name your watcher in the watcher's own Settings page, and openRMS-Atlas hands it a
 watcher key. Or paste a key made under "My watchers" on the site. Events queue locally and
-upload every 15 s.
+upload in batches every 10 minutes (sooner if 4000 are waiting; a server that refuses a batch
+as too large gets smaller ones).
 
 ## Desktop app
 

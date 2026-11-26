@@ -18,6 +18,12 @@ use tracing::{info, warn};
 
 pub const SOFTWARE: &str = concat!("openrms-watch ", env!("CARGO_PKG_VERSION"));
 
+/// Atlas accepts up to 5000 lines / 5 MB per upload (feed.md section 2); stay under it.
+const BATCH_LINES: usize = 4900;
+const BATCH_BYTES: usize = 4_500_000;
+/// Upload before the timer when this many events are waiting.
+const EARLY_SEND_AT: i64 = 4000;
+
 /// RFC 3339 UTC with milliseconds, from unix ms.
 pub fn iso(ms: i64) -> String {
     let secs = ms.div_euclid(1000);
@@ -194,10 +200,14 @@ pub fn run(cfg: UploaderCfg, stop: Arc<AtomicBool>) {
     let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(30)).user_agent(SOFTWARE).build();
     let started = Instant::now();
     let (mut last_cpu, mut last_cpu_t) = (proc_cpu_s(), Instant::now());
-    let mut next_send = Instant::now() + Duration::from_secs(5);
+    // first upload a minute after start (so the contributor list shows it live), then every interval
+    let mut next_send = Instant::now() + Duration::from_secs(60).min(cfg.interval);
+    let mut next_queue_check = Instant::now();
     let mut next_status = Instant::now() + Duration::from_secs(10);
     let mut next_calls = Instant::now();
-    let mut backoff = cfg.interval;
+    let mut backoff = Duration::from_secs(30);
+    // shrinks when a server answers 413 (e.g. an Atlas still enforcing 1000 lines)
+    let mut max_lines = BATCH_LINES;
     let _ = kv_set(&c, "contribute_enabled", if cfg.enabled { "1" } else { "0" });
     while !stop.load(Ordering::Relaxed) {
         std::thread::sleep(Duration::from_millis(500));
@@ -230,21 +240,35 @@ pub fn run(cfg: UploaderCfg, stop: Arc<AtomicBool>) {
             let _ = enqueue(&c, &id, &ev);
             next_status = now + Duration::from_secs(300);
         }
+        if now >= next_queue_check {
+            next_queue_check = now + Duration::from_secs(30);
+            let waiting: i64 = c.query_row("SELECT count(*) FROM outbox WHERE sent_ms IS NULL", [], |r| r.get(0)).unwrap_or(0);
+            if waiting >= EARLY_SEND_AT && next_send > now {
+                info!("uploader: {waiting} events waiting, sending early");
+                next_send = now;
+            }
+        }
         if now < next_send {
             continue;
         }
         if let Err(e) = queue_attempts(&c, cfg.window_s) {
             warn!("uploader: queueing attempts: {e:#}");
         }
-        match send_batch(&c, &agent, url, token) {
-            Ok(Sent::Done(n)) => {
+        match send_batch(&c, &agent, url, token, max_lines) {
+            Ok(Sent::Done(n, more)) => {
                 if n > 0 {
                     info!("uploaded {n} events");
                 }
-                backoff = cfg.interval;
-                next_send = now + cfg.interval;
+                backoff = Duration::from_secs(30);
+                // a full batch means a backlog (e.g. after being offline): keep draining
+                next_send = if more { now + Duration::from_secs(2) } else { now + cfg.interval };
             }
             Ok(Sent::Retry(after)) => next_send = now + after,
+            Ok(Sent::TooLarge) => {
+                max_lines = (max_lines / 2).max(100);
+                warn!("uploader: batch too large for the server (413); retrying with up to {max_lines} events");
+                next_send = now + Duration::from_secs(2);
+            }
             Ok(Sent::Rejected(why)) => {
                 warn!("uploader: {why}; retrying in 5 min");
                 next_send = now + Duration::from_secs(300);
@@ -252,29 +276,45 @@ pub fn run(cfg: UploaderCfg, stop: Arc<AtomicBool>) {
             Err(e) => {
                 let _ = kv_set(&c, "upload_error", &format!("{e:#}"));
                 warn!("uploader: {e:#}");
-                backoff = (backoff * 2).min(Duration::from_secs(600));
+                // retry sooner than the next batch, backing off up to the interval
                 next_send = now + backoff;
+                backoff = (backoff * 2).min(cfg.interval);
             }
         }
     }
 }
 
 enum Sent {
-    Done(usize),
+    /// events sent, and whether more are waiting (the batch was full)
+    Done(usize, bool),
+    /// the server refused the batch size (413)
+    TooLarge,
     Retry(Duration),
     Rejected(String),
 }
 
-fn send_batch(c: &Connection, agent: &ureq::Agent, url: &str, token: &str) -> Result<Sent> {
+fn send_batch(c: &Connection, agent: &ureq::Agent, url: &str, token: &str, max_lines: usize) -> Result<Sent> {
     let rows: Vec<(String, String)> = c
-        .prepare("SELECT id, body FROM outbox WHERE sent_ms IS NULL ORDER BY created_ms LIMIT 500")?
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .prepare("SELECT id, body FROM outbox WHERE sent_ms IS NULL ORDER BY created_ms LIMIT ?1")?
+        .query_map([(max_lines + 1) as i64], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<rusqlite::Result<_>>()?;
     if rows.is_empty() {
         let _ = kv_set(c, "upload_last_ok", &now_ms().to_string());
-        return Ok(Sent::Done(0));
+        return Ok(Sent::Done(0, false));
     }
-    let body: String = rows.iter().map(|(_, b)| format!("{b}\n")).collect();
+    // fill the batch up to the line and byte limits
+    let mut body = String::new();
+    let mut take = 0;
+    for (_, b) in rows.iter().take(max_lines) {
+        if take > 0 && body.len() + b.len() + 1 > BATCH_BYTES {
+            break;
+        }
+        body.push_str(b);
+        body.push('\n');
+        take += 1;
+    }
+    let more = take < rows.len();
+    let rows = &rows[..take];
     let resp = agent
         .post(&format!("{}/api/v1/watch/ingest", url.trim_end_matches('/')))
         .set("x-api-key", token)
@@ -293,7 +333,7 @@ fn send_batch(c: &Connection, agent: &ureq::Agent, url: &str, token: &str) -> Re
                 .unwrap_or_default();
             let t = c.unchecked_transaction()?;
             let now = now_ms();
-            for (id, _) in &rows {
+            for (id, _) in rows {
                 t.execute("UPDATE outbox SET sent_ms=?2, error=?3 WHERE id=?1", params![id, now, rejected.get(id)])?;
             }
             t.commit()?;
@@ -302,7 +342,7 @@ fn send_batch(c: &Connection, agent: &ureq::Agent, url: &str, token: &str) -> Re
             }
             kv_set(c, "upload_last_ok", &now.to_string())?;
             kv_set(c, "upload_error", "")?;
-            Ok(Sent::Done(rows.len()))
+            Ok(Sent::Done(rows.len(), more))
         }
         Err(ureq::Error::Status(429, r)) => {
             let after = r.header("retry-after").and_then(|s| s.parse().ok()).unwrap_or(60);
@@ -313,9 +353,7 @@ fn send_batch(c: &Connection, agent: &ureq::Agent, url: &str, token: &str) -> Re
             kv_set(c, "upload_error", why)?;
             Ok(Sent::Rejected(why.into()))
         }
-        Err(ureq::Error::Status(413, _)) => {
-            anyhow::bail!("batch too large (413)")
-        }
+        Err(ureq::Error::Status(413, _)) => Ok(Sent::TooLarge),
         Err(e) => Err(e.into()),
     }
 }

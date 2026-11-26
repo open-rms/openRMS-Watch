@@ -99,8 +99,8 @@ defaults: a Raspberry Pi 4 probably gets one band at 2.4 MS/s and 4 decoders (to
 
 ## 8. Uploader
 
-Local outbox table (event ULID, sent flag), batch upload every 15 s, exponential backoff, survives
-restarts and offline periods. Status on the page: linked account, last upload, queue length,
+Local outbox table (event ULID, sent flag), batch upload every 10 minutes (up to 4900 events / 4.5 MB per POST, early when 4000 are
+waiting, halved on HTTP 413), retry with backoff, survives restarts and offline periods. Status on the page: linked account, last upload, queue length,
 token errors. Token: an `ormsw_` key the user creates under "My watchers" on the site and pastes
 into the Contribute page; one-click linking (device code, traded once for a key) comes later.
 

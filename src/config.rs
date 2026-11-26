@@ -63,7 +63,7 @@ impl Default for Contribute {
     }
 }
 
-fn d_interval() -> u64 { 15 }
+fn d_interval() -> u64 { 600 } // batches every 10 minutes (Atlas: "live" = uploaded within 25 min)
 
 /// One SDR scanning whole band segments: Mercury connect bursts are found in
 /// the spectrum and a decoder from a pool is pointed at each one.

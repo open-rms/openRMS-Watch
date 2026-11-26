@@ -206,7 +206,7 @@ fn main() -> Result<()> {
                     atlas_url: cfg.atlas.url.clone(),
                     enabled: contribute,
                     token: cfg.contribute.token.clone(),
-                    interval: std::time::Duration::from_secs(cfg.contribute.interval_s.max(5)),
+                    interval: std::time::Duration::from_secs(cfg.contribute.interval_s.max(10)),
                     window_s: cfg.watch.attempt_window_s,
                     sdr_label: cfg.receivers.iter().map(|r| if r.name.is_empty() { r.id.clone() } else { r.name.clone() }).collect::<Vec<_>>().join(", "),
                     decoders: cfg.widebands.iter().map(|w| w.decoders).sum::<usize>()
